@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html {
+    color-scheme: light;
+}
+
+html.dark {
+    color-scheme: dark;
+}
+
+html.dark body {
+    background-color: #111827;
+    color: #e5e7eb;
+}
+
+html.dark .bg-white,
+html.dark [class~="bg-white/95"] {
+    background-color: #1f2937 !important;
+}
+
+html.dark .bg-gray-50,
+html.dark [class~="bg-gray-50/80"] {
+    background-color: #1f2937 !important;
+}
+
+html.dark .bg-gray-100 {
+    background-color: #111827 !important;
+}
+
+html.dark .bg-gray-200 {
+    background-color: #374151 !important;
+}
+
+html.dark .bg-indigo-50,
+html.dark [class~="bg-indigo-50/60"] {
+    background-color: #312e81 !important;
+}
+
+html.dark .text-gray-900,
+html.dark .text-gray-800 {
+    color: #f3f4f6 !important;
+}
+
+html.dark .text-gray-700,
+html.dark .text-gray-600 {
+    color: #d1d5db !important;
+}
+
+html.dark .text-gray-500,
+html.dark .text-gray-400 {
+    color: #9ca3af !important;
+}
+
+html.dark .border-gray-100,
+html.dark .border-gray-200 {
+    border-color: #374151 !important;
+}
+
+html.dark .divide-gray-100 > :not(:last-child) {
+    border-color: #374151 !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+    border-color: #4b5563;
+    background-color: #111827;
+    color: #f9fafb;
+}
+
+html.dark [class~="bg-[#edf0e9]"],
+html.dark [class~="bg-[#fbfcfa]"] {
+    background-color: #111827 !important;
+}
+
+html.dark [class~="bg-[#eff4ee]"] {
+    background-color: #052e16 !important;
+}
+
+html.dark [class~="text-[#183d34]"],
+html.dark [class~="text-[#1b3029]"],
+html.dark [class~="text-[#293b33]"] {
+    color: #e5e7eb !important;
+}
+
+html.dark [class~="text-[#69736b]"],
+html.dark [class~="text-[#7b857c]"] {
+    color: #9ca3af !important;
+}
+
+html.dark [class~="text-[#315840]"] {
+    color: #bbf7d0 !important;
+}
+
+html.dark [class~="text-[#416c57]"],
+html.dark [class~="text-[#244b39]"] {
+    color: #86efac !important;
+}
+
+html.dark [class~="text-[#a76a3c]"] {
+    color: #fcd34d !important;
+}
+
+html.dark [class~="border-[#d4dbd2]"],
+html.dark [class~="border-[#e4e8e1]"] {
+    border-color: #374151 !important;
+}
