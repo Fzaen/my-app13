@@ -24,16 +24,15 @@ class SalesExportController extends Controller
     public function export(ExportSalesRequest $request): BinaryFileResponse
     {
         $filters = $request->validated();
-        $fileName = sprintf(
-            '%s_%s_%s.xlsx',
-            $filters['laporan'],
-            $filters['tglstart'],
-            $filters['tglend'],
-        );
+        $fileName = $filters['laporan'];
+
+        if (ReportCatalog::supportsFilter($filters['laporan'], 'tglstart')) {
+            $fileName .= sprintf('_%s_%s', $filters['tglstart'], $filters['tglend']);
+        }
 
         return Excel::download(
             new SalesReportExport($filters['laporan'], $filters, DB::getDefaultConnection()),
-            $fileName,
+            $fileName.'.xlsx',
         );
     }
 }

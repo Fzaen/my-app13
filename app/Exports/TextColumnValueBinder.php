@@ -36,6 +36,14 @@ abstract class TextColumnValueBinder extends DefaultValueBinder implements WithC
         'no_hp',
         'toko',
         'recordid',
+        'kelurahan',
+        'bayar',
+        'free ongkir',
+        'kena ongkir',
+        'jenis',
+        'jam dsp',
+        'req kirim',
+        'ket',
     ];
 
     public function bindValue(Cell $cell, mixed $value): bool

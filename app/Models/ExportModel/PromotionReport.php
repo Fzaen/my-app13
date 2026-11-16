@@ -117,8 +117,10 @@ class PromotionReport extends Model
             ->groupBy('kd_promosi');
         $giftDescriptions = $connection->table('tbtr_gift_hdr as gift_header')
             ->leftJoin('tbmaster_prodmast as gift_product', 'gift_header.gfh_kethadiah', '=', 'gift_product.prd_prdcd')
-            ->select('gift_header.gfh_kethadiah')
-            ->select('gift_product.prd_deskripsipanjang')
+            ->select([
+                'gift_header.gfh_kethadiah',
+                'gift_product.prd_deskripsipanjang',
+            ])
             ->distinct();
 
         $report = $connection->table('tbtr_gift_dtl as gift_detail')

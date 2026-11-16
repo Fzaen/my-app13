@@ -41,6 +41,9 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'selectedDatabase' => config("database.sites.{$databaseKey}.label"),
+            'flash' => [
+                'success' => $request->session()->get('success'),
+            ],
         ];
     }
 }

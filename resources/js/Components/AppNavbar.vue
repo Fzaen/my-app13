@@ -36,31 +36,79 @@ watch(
     },
 );
 
+const dateInputValue = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+};
+
+const reportDateEnd = new Date();
+const reportDateStart = new Date(reportDateEnd);
+reportDateStart.setDate(1);
+reportDateStart.setMonth(reportDateStart.getMonth() - 1);
+const reportDateLastSevenDays = new Date(reportDateEnd);
+reportDateLastSevenDays.setDate(reportDateLastSevenDays.getDate() - 6);
+
+const reportHref = (report, filters = {}, startDate = reportDateStart) => {
+    const query = new URLSearchParams({
+        tglstart: dateInputValue(startDate),
+        tglend: dateInputValue(reportDateEnd),
+        ...filters,
+    });
+
+    return `${route("pb.reports.show", { report })}?${query.toString()}`;
+};
+
 const navigationMenus = [
     {
         label: "Klik",
-        route: "profile.edit",
+        route: "pb.all",
         items: [
             {
-                label: "PB All",
-                route: "pb.all",
-                children: [
-                    {
-                        label: "PB Tgl",
-                        route: "profile.edit",
-                        children: [
-                            { label: "PB Tgl", route: "profile.edit" },
-                            { label: "PB Item", route: "profile.edit" },
-                        ],
-                    },
-                    { label: "PB Item", route: "profile.edit" },
-                ],
+                label: "All PB H-7",
+                href: reportHref("pb-proses", { recid: "all" }, reportDateLastSevenDays),
             },
             {
-                label: "test",
-                children: [{ label: "test settings", route: "profile.edit" }],
+                label: "PB Proses",
+                href: reportHref("pb-proses", { recid: "proses" }),
+            },
+            {
+                label: "All PB Item H-7",
+                href: reportHref("pb-peritem", {}, reportDateLastSevenDays),
+            },
+            {
+                label: "PB Proses Item",
+                href: reportHref("pb-proses-item", { recid: "batas" }, reportDateLastSevenDays),
+            },
+            {
+                label: "List Kirim All",
+                href: reportHref("pb-proses", { recid: "5" }),
+            },
+            {
+                label: "List Belum PIN",
+                href: reportHref("pb-proses", {
+                    recid: "proses",
+                    pin: "belumpin",
+                }),
+            },
+            {
+                label: "Ambil di SPI",
+                href: reportHref("pb-proses", {
+                    recid: "proses",
+                    ekspedisi: "Ambil",
+                }),
+            },
+            {
+                label: "List Request Kirim",
+                href: reportHref("pb-proses", { recid: "proses", request: "1" }),
             },
         ],
+    },
+    {
+        label: "Cek",
+        items: [{ label: "Cek PLU", route: "plu.info" }],
     },
     {
         label: "Data",

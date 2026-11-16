@@ -19,13 +19,20 @@ const props = defineProps({
 const hasChildren = computed(
     () => Array.isArray(props.item.children) && props.item.children.length > 0,
 );
+const itemHref = computed(() => {
+    if (props.item.href) {
+        return props.item.href;
+    }
+
+    return props.item.route ? route(props.item.route) : null;
+});
 </script>
 
 <template>
     <div
         class="relative rounded-xl"
         :class="
-            item.route ? (item.danger ? 'bg-red-50' : 'bg-indigo-50/60') : ''
+            itemHref ? (item.danger ? 'bg-red-50' : 'bg-indigo-50/60') : ''
         "
         @mouseenter="
             mode === 'desktop' && hasChildren ? openSubmenu(itemKey) : null
@@ -38,8 +45,8 @@ const hasChildren = computed(
     >
         <div v-if="hasChildren" class="flex w-full items-center">
             <Link
-                v-if="item.route"
-                :href="route(item.route)"
+                v-if="itemHref"
+                :href="itemHref"
                 class="flex flex-1 items-center rounded-s-xl text-sm font-medium text-gray-700 transition"
                 :class="[
                     mode === 'desktop' ? 'px-3.5 py-3' : 'min-h-10 flex-1 px-3',
@@ -52,13 +59,13 @@ const hasChildren = computed(
             <button
                 type="button"
                 :aria-label="
-                    item.route ? `Toggle ${item.label} submenu` : undefined
+                    itemHref ? `Toggle ${item.label} submenu` : undefined
                 "
                 :aria-expanded="submenuOpen(itemKey)"
                 class="flex items-center justify-between text-sm font-medium text-gray-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 :class="[
                     mode === 'desktop' ? 'shrink-0 py-3' : 'min-h-10 shrink-0',
-                    item.route
+                    itemHref
                         ? 'rounded-e-xl px-2 hover:bg-indigo-500 hover:text-white'
                         : 'w-full rounded-xl px-3.5 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:bg-gray-700 dark:hover:text-white',
                 ]"
@@ -68,7 +75,7 @@ const hasChildren = computed(
                         : toggleSubmenu(itemKey, parentKey)
                 "
             >
-                <span v-if="!item.route">{{ item.label }}</span>
+                <span v-if="!itemHref">{{ item.label }}</span>
                 <svg
                     class="h-4 w-4 text-green-600 transition-transform duration-200"
                     :class="
@@ -98,8 +105,8 @@ const hasChildren = computed(
         </div>
 
         <Link
-            v-else-if="item.route && item.method"
-            :href="route(item.route)"
+            v-else-if="itemHref && item.method"
+            :href="itemHref"
             :method="item.method"
             as="button"
             class="flex w-full items-center rounded-xl px-3.5 py-3 text-left text-sm font-medium text-red-600 transition hover:bg-red-100"
@@ -108,8 +115,8 @@ const hasChildren = computed(
             {{ item.label }}
         </Link>
         <Link
-            v-else-if="item.route"
-            :href="route(item.route)"
+            v-else-if="itemHref"
+            :href="itemHref"
             class="flex items-center rounded-xl px-3.5 py-3 text-sm font-medium text-gray-700 transition hover:bg-indigo-500 hover:text-white"
             @click="closeNavigation"
         >

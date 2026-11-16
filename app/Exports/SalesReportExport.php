@@ -3,6 +3,7 @@
 namespace App\Exports;
 
 use App\Models\ExportModel\LogisticsReport;
+use App\Models\ExportModel\PurchaseOrderReport;
 use App\Models\ExportModel\ReportCatalog;
 use Illuminate\Database\Query\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -20,10 +21,20 @@ class SalesReportExport extends TextColumnValueBinder implements FromQuery, With
         private readonly string $report,
         private readonly array $filters,
         private readonly string $connectionName,
+        private readonly string $search = '',
     ) {}
 
     public function query(): Builder
     {
+        if ($this->search !== '' && PurchaseOrderReport::supportsTableReport($this->report)) {
+            return PurchaseOrderReport::forTable(
+                $this->report,
+                $this->filters,
+                $this->connectionName,
+                $this->search,
+            );
+        }
+
         return ReportCatalog::query($this->report, $this->filters, $this->connectionName);
     }
 
@@ -93,12 +104,23 @@ class SalesReportExport extends TextColumnValueBinder implements FromQuery, With
                 'OBI_TGLTRANS', 'PLU', 'DESK', 'QTY_ORDER', 'REALISASI', 'SEL_QTY', 'RPH_ORDER', 'RPH_REAL',
                 'SEL_RPH',
             ],
-            'pb-peritem' => [
+            'pb-peritem', 'pb-proses-item' => [
                 'OBI_RECID', 'KET', 'KET_ITEM', 'PB', 'OBI_KDMEMBER', 'CUS_NAMAMEMBER', 'TGLSTRUK',
                 'OBI_TGLTRANS', 'OBI_NOTRANS', 'TRJD_PRDCD', 'PRD_DESKRIPSIPANJANG', 'HRGSATUAN',
                 'OBI_QTYORDER', 'OBI_QTYREALISASI', 'POBI_QTY', 'POBI_CREATE_BY', 'OBI_URUT_PICK', 'JAM_PICK',
                 'JAM_SCAN', 'OBI_PICKER', 'OBI_HARGAWEB', 'OBI_QTY_HITUNGULANG', 'OBI_QTYBA',
                 'POBI_NOCONTAINER', 'SELISIH',
+            ],
+            'pb-proses' => [
+                'PB', 'TGLPB', 'NOTRANS', 'MEMBER', 'NAMA', 'EKSPEDISI', 'STATUS', 'TOTAL_ORDER',
+                'ITEM_ORDER', 'TOTAL_REALISASI', 'ITEM_REALISASI',
+            ],
+            'pb-kirim-list', 'pb-belum-pin' => [
+                'PB', 'TGLPB', 'MEMBER', 'NAMA', 'NOTRANS', 'EKSPEDISI', 'STATUS',
+            ],
+            'pb-ambil-spi' => ['PB', 'TGLPB', 'NOTRANS', 'MEMBER', 'NAMA'],
+            'pb-request-kirim' => [
+                'PB', 'TGLPB', 'NOTRANS', 'MEMBER', 'NAMA', 'REQ_TGL_KIRIM', 'REQ_REQUEST', 'STATUS',
             ],
             'pb-picking-pertanggal' => [
                 'KET', 'PB', 'TGLPB', 'NOTRANS', 'TGLSTRUK', 'MEMBER', 'NAMA', 'QTYORDER', 'REALISASI',

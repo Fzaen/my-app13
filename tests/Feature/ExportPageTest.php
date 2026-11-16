@@ -9,6 +9,8 @@ use App\Models\ExportModel\PromotionReport;
 use App\Models\ExportModel\PurchaseOrderReport;
 use App\Models\ExportModel\ReportCatalog;
 use App\Models\ExportModel\SalesReport;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Maatwebsite\Excel\Facades\Excel;
@@ -36,6 +38,75 @@ class ExportPageTest extends TestCase
                     ->where('reportOptions', ReportCatalog::options())
                     ->etc()
             );
+    }
+
+    public function test_export_report_options_only_advertise_supported_filters(): void
+    {
+        $options = collect(ReportCatalog::options())->keyBy('value');
+
+        $this->assertSame(
+            ['plu', 'supplier'],
+            $options->get('log-stock')['filters'],
+        );
+        $this->assertSame(
+            [],
+            $options->get('log-stock')['requiredFilters'],
+        );
+        $this->assertSame(
+            ['member'],
+            $options->get('promo-detail-mypoint')['requiredFilters'],
+        );
+        $this->assertSame(
+            ['tglstart', 'tglend', 'plu'],
+            $options->get('pb-peritem')['filters'],
+        );
+        $this->assertSame(1, $options->get('sales-perstruk')['maxPeriodMonths']);
+        $this->assertSame(6, $options->get('pb-proses')['maxPeriodMonths']);
+        $this->assertSame(1, $options->get('log-bpb-all')['maxPeriodMonths']);
+        $this->assertNull($options->get('sales-permember')['maxPeriodMonths']);
+        $this->assertSame(12, $options->get('sales-permember')['warningPeriodMonths']);
+    }
+
+    public function test_every_export_report_query_has_ordering_for_excel_chunking(): void
+    {
+        $filters = [
+            'tglstart' => '2026-09-01',
+            'tglend' => '2026-09-02',
+            'member' => 'GJ8500',
+        ];
+
+        foreach (ReportCatalog::types() as $report) {
+            $query = ReportCatalog::query($report, $filters, 'spi1m_banjarbaru_sim');
+
+            $this->assertNotEmpty(
+                $query->orders ?: $query->unionOrders,
+                "The [{$report}] export query must define ordering before chunking.",
+            );
+        }
+    }
+
+    public static function previouslyFailingReports(): array
+    {
+        return [
+            'active gift promotions' => ['promo-gift-aktif'],
+            'restricted items' => ['promo-item-larangan'],
+        ];
+    }
+
+    #[DataProvider('previouslyFailingReports')]
+    public function test_previously_failing_reports_generate_an_xlsx(string $report): void
+    {
+        $export = new class($report, [], 'spi1m_banjarbaru_sim') extends SalesReportExport
+        {
+            public function query(): Builder
+            {
+                return parent::query()->limit(1);
+            }
+        };
+
+        $xlsx = Excel::raw($export, \Maatwebsite\Excel\Excel::XLSX);
+
+        $this->assertStringStartsWith('PK', $xlsx);
     }
 
     public function test_authenticated_user_can_download_sales_per_item_xlsx_with_distinct_member_and_supplier_filters(): void
@@ -93,12 +164,58 @@ class ExportPageTest extends TestCase
         return [
             'PB per transaction date' => ['pb-pertanggal'],
             'PB item detail' => ['pb-peritem'],
+            'PB orders in process' => ['pb-proses'],
+            'PB process item detail' => ['pb-proses-item'],
+            'PB shipping list' => ['pb-kirim-list'],
+            'PB orders without PIN' => ['pb-belum-pin'],
+            'PB pickup orders' => ['pb-ambil-spi'],
+            'PB shipping requests' => ['pb-request-kirim'],
             'PB picking per date' => ['pb-picking-pertanggal'],
             'PB shipping per date' => ['pb-kirim-pertanggal'],
             'PB entry time' => ['pb-jam-masuk'],
             'PB backorder items' => ['pb-bark'],
             'PB handover status' => ['pb-sertim'],
         ];
+    }
+
+    public static function legacyMenuPurchaseOrderReports(): array
+    {
+        return [
+            'PB orders in process' => ['pb-proses'],
+            'PB process item detail' => ['pb-proses-item'],
+            'PB shipping list' => ['pb-kirim-list'],
+            'PB orders without PIN' => ['pb-belum-pin'],
+            'PB pickup orders' => ['pb-ambil-spi'],
+            'PB shipping requests' => ['pb-request-kirim'],
+        ];
+    }
+
+    #[DataProvider('legacyMenuPurchaseOrderReports')]
+    public function test_legacy_menu_pb_reports_execute_on_the_simulation_database(string $report): void
+    {
+        $filters = [
+            'tglstart' => '2026-09-01',
+            'tglend' => '2026-09-01',
+        ];
+        $rows = ReportCatalog::query($report, $filters, 'spi1m_banjarbaru_sim')
+            ->limit(1)
+            ->get();
+
+        $this->assertInstanceOf(Collection::class, $rows);
+    }
+
+    public function test_pb_process_report_uses_an_indexable_inclusive_date_range(): void
+    {
+        $query = PurchaseOrderReport::forExport('pb-proses', [
+            'tglstart' => '2026-09-01',
+            'tglend' => '2026-09-01',
+        ], 'spi1m_banjarbaru_sim');
+        $sql = $query->toSql();
+
+        $this->assertStringContainsString('"order_header"."obi_tglpb" >= ?', $sql);
+        $this->assertStringContainsString('"order_header"."obi_tglpb" < ?', $sql);
+        $this->assertContains('2026-09-01', $query->getBindings());
+        $this->assertContains('2026-09-02', $query->getBindings());
     }
 
     public static function promotionReports(): array
@@ -140,7 +257,7 @@ class ExportPageTest extends TestCase
         Excel::fake();
 
         $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
-        $fileName = sprintf('%s_2026-09-01_2026-09-02.xlsx', $report);
+        $fileName = $this->expectedExportFileName($report, '2026-09-01', '2026-09-02');
 
         $this->actingAs($user)
             ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
@@ -165,7 +282,7 @@ class ExportPageTest extends TestCase
         Excel::fake();
 
         $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
-        $fileName = sprintf('%s_2026-09-01_2026-09-02.xlsx', $report);
+        $fileName = $this->expectedExportFileName($report, '2026-09-01', '2026-09-02');
 
         $this->actingAs($user)
             ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
@@ -192,7 +309,7 @@ class ExportPageTest extends TestCase
         Excel::fake();
 
         $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
-        $fileName = sprintf('%s_2026-09-01_2026-09-30.xlsx', $report);
+        $fileName = $this->expectedExportFileName($report, '2026-09-01', '2026-09-30');
 
         $this->actingAs($user)
             ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
@@ -230,6 +347,31 @@ class ExportPageTest extends TestCase
         $this->assertStringNotContainsString('202309', $sql);
         $this->assertSame(89, count($query->columns));
         $this->travelBack();
+    }
+
+    public function test_stock_export_downloads_without_dates_and_applies_supported_filters(): void
+    {
+        Excel::fake();
+
+        $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
+
+        $this->actingAs($user)
+            ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
+            ->post(route('sales.export.download'), [
+                'laporan' => 'log-stock',
+                'plu' => '1234560',
+                'supplier' => 'S1483',
+            ])
+            ->assertOk();
+
+        Excel::assertDownloaded('log-stock.xlsx', function (SalesReportExport $export): bool {
+            $bindings = $export->query()->getBindings();
+
+            return in_array('1234560', $bindings, true)
+                && in_array('S1483', $bindings, true)
+                && ! in_array('2026-09-01', $bindings, true)
+                && ! in_array('2026-09-30', $bindings, true);
+        });
     }
 
     public function test_logistics_report_binds_dates_and_supplier_filter_values(): void
@@ -350,6 +492,52 @@ class ExportPageTest extends TestCase
             ->assertSessionHasErrors(['tglstart', 'tglend']);
     }
 
+    public function test_sales_per_receipt_export_rejects_periods_longer_than_one_month(): void
+    {
+        $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
+
+        $this->actingAs($user)
+            ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
+            ->post(route('sales.export.download'), [
+                'laporan' => 'sales-perstruk',
+                'tglstart' => '2025-07-01',
+                'tglend' => '2025-08-01',
+            ])
+            ->assertSessionHasErrors([
+                'tglend' => 'Rentang laporan ini maksimal 1 bulan. Pilih tanggal yang lebih pendek.',
+            ]);
+    }
+
+    public function test_aggregate_sales_per_member_export_allows_long_periods(): void
+    {
+        Excel::fake();
+
+        $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
+
+        $this->actingAs($user)
+            ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
+            ->post(route('sales.export.download'), [
+                'laporan' => 'sales-permember',
+                'tglstart' => '2025-01-01',
+                'tglend' => '2026-11-13',
+            ])
+            ->assertOk();
+
+        Excel::assertDownloaded('sales-permember_2025-01-01_2026-11-13.xlsx');
+    }
+
+    public function test_sales_export_requires_dates_for_period_reports(): void
+    {
+        $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
+
+        $this->actingAs($user)
+            ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
+            ->post(route('sales.export.download'), [
+                'laporan' => 'sales-peritem',
+            ])
+            ->assertSessionHasErrors(['tglstart', 'tglend']);
+    }
+
     public function test_sales_export_rejects_a_report_that_is_not_supported(): void
     {
         $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
@@ -463,5 +651,14 @@ class ExportPageTest extends TestCase
         } finally {
             DB::setDefaultConnection($previousConnection);
         }
+    }
+
+    private function expectedExportFileName(string $report, string $startDate, string $endDate): string
+    {
+        $period = ReportCatalog::supportsFilter($report, 'tglstart')
+            ? sprintf('_%s_%s', $startDate, $endDate)
+            : '';
+
+        return $report.$period.'.xlsx';
     }
 }

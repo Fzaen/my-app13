@@ -2,6 +2,15 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+#nprogress .bar {
+    height: 4px;
+    box-shadow: 0 0 10px #22d3ee, 0 0 5px #22d3ee;
+}
+
+#nprogress .peg {
+    box-shadow: 0 0 10px #22d3ee, 0 0 5px #22d3ee;
+}
+
 html {
     color-scheme: light;
 }

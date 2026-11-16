@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
-import { Head } from "@inertiajs/vue3";
-import { computed, ref } from "vue";
+import { Head, usePage } from "@inertiajs/vue3";
+import { computed, ref, watch } from "vue";
 
 const props = defineProps({
     reportOptions: {
@@ -10,18 +10,74 @@ const props = defineProps({
     },
 });
 
+const page = usePage();
 const isExporting = ref(false);
 const selectedReport = ref(props.reportOptions[0]?.value ?? "");
+const initialDateStart = ref("");
+const initialDateEnd = ref("");
 const reportSearch = ref("");
 const isReportDropdownOpen = ref(false);
 const highlightedReportIndex = ref(0);
 const downloadProgress = ref(null);
 const downloadStatus = ref("");
+
+function syncExportSelection(url) {
+    const queryParams = new URL(url, window.location.origin).searchParams;
+    const requestedReport = queryParams.get("laporan");
+    const reportExists = props.reportOptions.some(
+        (report) => report.value === requestedReport,
+    );
+
+    selectedReport.value = reportExists
+        ? requestedReport
+        : (props.reportOptions[0]?.value ?? "");
+    initialDateStart.value = queryParams.get("tglstart") ?? "";
+    initialDateEnd.value = queryParams.get("tglend") ?? "";
+}
+
+syncExportSelection(window.location.href);
+watch(() => page.url, syncExportSelection);
+
 const selectedReportLabel = computed(
     () =>
         props.reportOptions.find(
             (report) => report.value === selectedReport.value,
         )?.label ?? "",
+);
+const selectedReportOption = computed(() =>
+    props.reportOptions.find(
+        (report) => report.value === selectedReport.value,
+    ),
+);
+const periodLimitMessage = computed(() => {
+    const maxMonths = selectedReportOption.value?.maxPeriodMonths;
+
+    if (maxMonths) {
+        return `Batas rentang laporan ini maksimal ${maxMonths} bulan.`;
+    }
+
+    const warningMonths = selectedReportOption.value?.warningPeriodMonths;
+
+    return warningMonths
+        ? `Laporan ini tidak dibatasi karena hasilnya agregat. Periode lebih dari ${warningMonths} bulan mungkin memerlukan waktu lebih lama.`
+        : "";
+});
+const hasReportFilter = (filter) =>
+    selectedReportOption.value?.filters.includes(filter) ?? false;
+const isRequiredReportFilter = (filter) =>
+    selectedReportOption.value?.requiredFilters.includes(filter) ?? false;
+const showIdentityFilters = computed(() =>
+    ["plu", "member", "supplier"].some(hasReportFilter),
+);
+const showSalesScopeFilters = computed(() =>
+    [
+        "divisi",
+        "departement",
+        "outlet",
+        "sub_outlet",
+        "larangan",
+        "esse_djarum",
+    ].some(hasReportFilter),
 );
 const filteredReportOptions = computed(() => {
     const search = reportSearch.value.trim().toLowerCase();
@@ -36,19 +92,25 @@ const filteredReportOptions = computed(() => {
             report.value.toLowerCase().includes(search),
     );
 });
-const isPbReport = computed(() => selectedReport.value.startsWith("pb-"));
-const requiresMember = computed(() =>
-    ["exportmember-peritem", "promo-detail-mypoint"].includes(
-        selectedReport.value,
-    ),
-);
-const showPluFilter = computed(
-    () =>
-        !isPbReport.value ||
-        ["pb-peritem", "pb-picking-pertanggal"].includes(
-            selectedReport.value,
-        ),
-);
+
+function exceedsMonthRange(startDate, endDate, months) {
+    if (!startDate || !endDate || !months) {
+        return false;
+    }
+
+    const [year, month, day] = startDate.split("-").map(Number);
+    const targetMonthIndex = month - 1 + months;
+    const targetYear = year + Math.floor(targetMonthIndex / 12);
+    const targetMonth = targetMonthIndex % 12;
+    const finalDay = Math.min(
+        day,
+        new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate(),
+    );
+    const limitDate = Date.UTC(targetYear, targetMonth, finalDay);
+    const selectedEndDate = Date.parse(`${endDate}T00:00:00Z`);
+
+    return Number.isFinite(selectedEndDate) && selectedEndDate >= limitDate;
+}
 
 function openReportDropdown() {
     reportSearch.value = "";
@@ -112,6 +174,25 @@ const downloadExport = (event) => {
     }
 
     const formData = new FormData(event.currentTarget);
+    const startDate = String(formData.get("tglstart") ?? "");
+    const endDate = String(formData.get("tglend") ?? "");
+    const maxPeriodMonths = selectedReportOption.value?.maxPeriodMonths;
+    const warningPeriodMonths = selectedReportOption.value?.warningPeriodMonths;
+
+    if (exceedsMonthRange(startDate, endDate, maxPeriodMonths)) {
+        downloadStatus.value = `Rentang laporan ini maksimal ${maxPeriodMonths} bulan. Pilih tanggal yang lebih pendek.`;
+        return;
+    }
+
+    if (
+        exceedsMonthRange(startDate, endDate, warningPeriodMonths) &&
+        !window.confirm(
+            `Periode lebih dari ${warningPeriodMonths} bulan dapat membuat laporan agregat diproses lebih lama. Lanjutkan export?`,
+        )
+    ) {
+        return;
+    }
+
     const request = new XMLHttpRequest();
 
     isExporting.value = true;
@@ -385,8 +466,11 @@ const departmentOptions = [
                                 </li>
                             </ul>
                         </div>
-                        <div class="mt-2 grid gap-2 sm:grid-cols-3">
-                            <label v-if="showPluFilter" class="block">
+                        <div
+                            v-if="showIdentityFilters"
+                            class="mt-2 grid gap-2 sm:grid-cols-3"
+                        >
+                            <label v-if="hasReportFilter('plu')" class="block">
                                 <span class="sr-only">PLU</span>
                                 <input
                                     name="plu"
@@ -395,17 +479,17 @@ const departmentOptions = [
                                     class="block h-9 w-full rounded-md border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
                                 />
                             </label>
-                            <label v-if="!isPbReport" class="block">
+                            <label v-if="hasReportFilter('member')" class="block">
                                 <span class="sr-only">Member</span>
                                 <input
                                     name="member"
                                     type="text"
-                                    :required="requiresMember"
+                                    :required="isRequiredReportFilter('member')"
                                     placeholder="Member"
                                     class="block h-9 w-full rounded-md border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
                                 />
                             </label>
-                            <label v-if="!isPbReport" class="block">
+                            <label v-if="hasReportFilter('supplier')" class="block">
                                 <span class="sr-only">Supplier</span>
                                 <input
                                     name="supplier"
@@ -418,6 +502,7 @@ const departmentOptions = [
                     </section>
 
                     <section
+                        v-if="hasReportFilter('tglstart')"
                         class="border-b border-gray-200 pb-4 dark:border-gray-800"
                     >
                         <div class="mb-2 flex items-center gap-2">
@@ -439,12 +524,17 @@ const departmentOptions = [
                                     class="text-xs font-medium text-gray-600 dark:text-gray-300"
                                 >
                                     Tanggal awal
-                                    <span class="text-rose-600">*</span>
+                                    <span
+                                        v-if="isRequiredReportFilter('tglstart')"
+                                        class="text-rose-600"
+                                        >*</span
+                                    >
                                 </span>
                                 <input
-                                    required
+                                    :required="isRequiredReportFilter('tglstart')"
                                     name="tglstart"
                                     type="date"
+                                    v-model="initialDateStart"
                                     class="block h-9 w-full rounded-md border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                 />
                             </label>
@@ -455,20 +545,32 @@ const departmentOptions = [
                                     class="text-xs font-medium text-gray-600 dark:text-gray-300"
                                 >
                                     Tanggal akhir
-                                    <span class="text-rose-600">*</span>
+                                    <span
+                                        v-if="isRequiredReportFilter('tglend')"
+                                        class="text-rose-600"
+                                        >*</span
+                                    >
                                 </span>
                                 <input
-                                    required
+                                    :required="isRequiredReportFilter('tglend')"
                                     name="tglend"
                                     type="date"
+                                    v-model="initialDateEnd"
                                     class="block h-9 w-full rounded-md border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                 />
                             </label>
                         </div>
+                        <p
+                            v-if="periodLimitMessage"
+                            class="mt-2 text-xs text-amber-700 dark:text-amber-300"
+                            role="status"
+                        >
+                            {{ periodLimitMessage }}
+                        </p>
                     </section>
 
                     <section
-                        v-if="!isPbReport"
+                        v-if="showSalesScopeFilters"
                         class="border-b border-gray-200 pb-4 dark:border-gray-800 lg:col-span-2"
                     >
                         <div class="mb-2 flex items-center gap-2">
@@ -483,7 +585,7 @@ const departmentOptions = [
                             </h2>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            <label class="block">
+                            <label v-if="hasReportFilter('divisi')" class="block">
                                 <span
                                     class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300"
                                     >Divisi</span
@@ -502,7 +604,7 @@ const departmentOptions = [
                                     </option>
                                 </select>
                             </label>
-                            <label class="block">
+                            <label v-if="hasReportFilter('departement')" class="block">
                                 <span
                                     class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300"
                                     >Departemen</span
@@ -521,7 +623,7 @@ const departmentOptions = [
                                     </option>
                                 </select>
                             </label>
-                            <label class="block">
+                            <label v-if="hasReportFilter('outlet')" class="block">
                                 <span
                                     class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300"
                                     >Outlet</span
@@ -540,7 +642,7 @@ const departmentOptions = [
                                     </option>
                                 </select>
                             </label>
-                            <label class="block">
+                            <label v-if="hasReportFilter('sub_outlet')" class="block">
                                 <span
                                     class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300"
                                     >Sub outlet</span
@@ -564,6 +666,7 @@ const departmentOptions = [
                             class="mt-3 flex flex-col gap-2 sm:flex-row sm:gap-6"
                         >
                             <label
+                                v-if="hasReportFilter('larangan')"
                                 class="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300"
                             >
                                 <input
@@ -575,6 +678,7 @@ const departmentOptions = [
                                 Exclude item larangan
                             </label>
                             <label
+                                v-if="hasReportFilter('esse_djarum')"
                                 class="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300"
                             >
                                 <input
