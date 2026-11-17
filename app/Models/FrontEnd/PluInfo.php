@@ -108,21 +108,21 @@ class PluInfo extends Model
     /** @return Collection<int, stdClass> */
     public function panelData(string $panel, string $plu, ?string $connectionName = null): Collection
     {
-        $cacheKey = 'plu-info:panel:v2:'.hash('sha256', implode('|', [
+        $cacheKey = 'plu-info:panel:v3:'.hash('sha256', implode('|', [
             $connectionName ?? (string) config('database.default'),
             $panel,
             $plu,
             now()->toDateString(),
         ]));
 
-        return Cache::remember(
+        $rows = Cache::remember(
             $cacheKey,
             now()->addSeconds(self::PANEL_CACHE_SECONDS),
-            function () use ($panel, $plu, $connectionName): Collection {
+            function () use ($panel, $plu, $connectionName): array {
                 $connection = DB::connection($connectionName);
                 $pluRange = $this->pluFamilyBounds($plu);
 
-                return match ($panel) {
+                $rows = match ($panel) {
                     'barcodes' => $connection->table('tbmaster_barcode')
                         ->select([
                             'brc_prdcd as plu',
@@ -498,8 +498,17 @@ class PluInfo extends Model
                         ->get(),
                     default => throw new \InvalidArgumentException("Unknown PLU panel [{$panel}]."),
                 };
+
+                return $rows->map(
+                    static fn (stdClass $row): array => get_object_vars($row),
+                )->all();
             },
         );
+
+        return collect(array_map(
+            static fn (array $row): stdClass => (object) $row,
+            $rows,
+        ));
     }
 
     /** @param list<string> $transactionTypes

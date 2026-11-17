@@ -4,12 +4,68 @@ namespace Tests\Feature;
 
 use App\Models\Auth\DatabaseUser;
 use App\Models\FrontEnd\PluInfo;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
 class PluInfoTest extends TestCase
 {
+    public function test_panel_data_returns_a_collection_when_cache_disallows_serialized_classes(): void
+    {
+        $defaultCacheStore = config('cache.default');
+        $cacheStore = 'plu-info-serialized-test';
+        $cacheKey = 'plu-info:panel:v3:'.hash('sha256', implode('|', [
+            'sqlite',
+            'barcodes',
+            '1234560',
+            now()->toDateString(),
+        ]));
+
+        config([
+            'cache.default' => $cacheStore,
+            'cache.stores.'.$cacheStore => [
+                'driver' => 'array',
+                'serialize' => true,
+            ],
+        ]);
+        Cache::forgetDriver($cacheStore);
+
+        Schema::connection('sqlite')->create('tbmaster_barcode', function ($table): void {
+            $table->string('brc_prdcd');
+            $table->string('brc_barcode');
+            $table->string('brc_status')->nullable();
+            $table->string('brc_flag_aktivasi')->nullable();
+            $table->string('brc_create_by')->nullable();
+            $table->timestamp('brc_create_dt')->nullable();
+            $table->string('brc_modify_by')->nullable();
+            $table->timestamp('brc_modify_dt')->nullable();
+        });
+        DB::connection('sqlite')->table('tbmaster_barcode')->insert([
+            'brc_prdcd' => '1234560',
+            'brc_barcode' => '8991234567890',
+            'brc_status' => 'A',
+        ]);
+
+        try {
+            $rows = (new PluInfo)->panelData('barcodes', '1234560', 'sqlite');
+            $cachedRows = (new PluInfo)->panelData('barcodes', '1234560', 'sqlite');
+
+            $this->assertInstanceOf(Collection::class, $rows);
+            $this->assertSame('8991234567890', $rows->first()->barcode);
+            $this->assertInstanceOf(Collection::class, $cachedRows);
+            $this->assertSame('8991234567890', $cachedRows->first()->barcode);
+            $this->assertIsArray(Cache::get($cacheKey));
+        } finally {
+            Schema::connection('sqlite')->dropIfExists('tbmaster_barcode');
+            Cache::forgetDriver($cacheStore);
+            Cache::setDefaultDriver($defaultCacheStore);
+        }
+    }
+
     public function test_guest_is_redirected_to_login_from_plu_info(): void
     {
         $this->get(route('plu.info'))->assertRedirect(route('login'));
