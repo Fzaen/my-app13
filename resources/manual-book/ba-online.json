@@ -1,0 +1,34 @@
+{
+    "title": "BA Online",
+    "announcement": "FYI Per 19 Oct 2026, Berita Acara Online sudah Live dengan scope Pembatalan Struk.",
+    "scope": "Pembatalan Struk",
+    "summary": "Informasi akses, pendaftaran pengguna, dan bantuan untuk Berita Acara Online.",
+    "access": [
+        {
+            "label": "URL Lokal (Jaringan Kantor)",
+            "url": "http://itcc.indomaret.lan/berita-acara-itcc/login",
+            "description": "Akses melalui jaringan kantor."
+        },
+        {
+            "label": "URL Public Access (Mobile)",
+            "url": "https://itcc.indomaret.co.id/berita-acara-itcc/login",
+            "description": "Akses publik melalui perangkat mobile."
+        }
+    ],
+    "credentials": "User Pass sesuai dengan ESS.",
+    "guide": {
+        "label": "Juklak Berita Acara Online",
+        "url": ""
+    },
+    "registration": {
+        "label": "GSheet pendaftaran user baru",
+        "url": "https://docs.google.com/spreadsheets/d/15LEPYhH9QINY3ufknS9ez2JvGkO2z8WP95PagdBm_cQ/edit?usp=sharing"
+    },
+    "whatsapp": {
+        "label": "Group WhatsApp Web BA Online",
+        "url": "https://chat.whatsapp.com/JxOC9MioBtC5eMpUtLfFZB?s=sw&p=i&mlu=4&ilr=4&iam=2"
+    },
+    "pic": "Pak Vian ITC",
+    "support": "Segala macam komplain terkait Web BA Online bisa dilakukan di group WhatsApp Web BA Online.",
+    "closing": "Terima kasih 🙏🏼"
+}

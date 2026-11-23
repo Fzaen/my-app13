@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\ManualBookController;
 use App\Http\Controllers\PbActionController;
 use App\Http\Controllers\PbAllController;
+use App\Http\Controllers\PbItemController;
 use App\Http\Controllers\PluInfoController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseOrderReportController;
@@ -25,19 +27,32 @@ Route::middleware('auth')->group(function () {
         ->name('pb.reports.show');
     Route::get('/pb/reports/{report}/export', [PurchaseOrderReportController::class, 'export'])
         ->name('pb.reports.export');
+    Route::get('/pb/reports/{report}/copy', [PurchaseOrderReportController::class, 'copy'])
+        ->name('pb.reports.copy');
+    Route::get('/pb/items/details', [PbItemController::class, 'details'])
+        ->name('pb.items.details');
+    Route::get('/pb/items/location', [PbItemController::class, 'location'])
+        ->name('pb.items.location');
     Route::get('/pb/actions/gift', [PbActionController::class, 'createGift'])
         ->name('pb.actions.gift.create');
     Route::post('/pb/actions/gift', [PbActionController::class, 'storeGift'])
         ->middleware(EnsurePbWriteIp::class)
         ->name('pb.actions.gift.store');
+    Route::get('/pb/actions/driver-details', [PbActionController::class, 'driverDetails'])
+        ->name('pb.actions.driver-details');
     Route::get('/pb/actions/loyalty', [PbActionController::class, 'loyalty'])
         ->name('pb.actions.loyalty.index');
+    Route::get('/pb/actions/loyalty/details', [PbActionController::class, 'loyaltyDetails'])
+        ->name('pb.actions.loyalty.details');
     Route::post('/pb/actions/loyalty', [PbActionController::class, 'updateLoyalty'])
         ->middleware(EnsurePbWriteIp::class)
         ->name('pb.actions.loyalty.update');
     Route::get('/pb/actions/request/{mode}', [PbActionController::class, 'requestForm'])
         ->whereIn('mode', ['create', 'edit'])
         ->name('pb.actions.request.form');
+    Route::get('/manual-book/faq/ba-online', [ManualBookController::class, 'baOnline'])
+        ->middleware('can:access-manual-book')
+        ->name('manual-book.faq.ba-online');
     Route::post('/pb/actions/request', [PbActionController::class, 'saveRequest'])
         ->middleware(EnsurePbWriteIp::class)
         ->name('pb.actions.request.save');

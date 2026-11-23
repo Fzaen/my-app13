@@ -39,7 +39,6 @@ final class PbDateReport
         'ket',
         'obi_service_fee',
         'ketdsp',
-        'kdpromo',
         'hdh_qty',
     ];
 
@@ -68,14 +67,9 @@ final class PbDateReport
             ->selectRaw('obi_createdt AS tgl')
             ->selectRaw('obi_notrans::NUMERIC AS obi_notrans')
             ->selectRaw('obi_kdmember')
-            ->selectRaw('obi_nostruk')
             ->selectRaw('obi_tglstruk::DATE AS tglstruk')
-            ->selectRaw('obi_tipe')
-            ->selectRaw('obi_kdstation')
-            ->selectRaw('obi_cashierid')
             ->selectRaw('obi_ekspedisi')
             ->selectRaw('obi_kdekspedisi')
-            ->selectRaw('obi_flagbayar')
             ->selectRaw('obi_tipebayar')
             ->selectRaw('obi_service_fee')
             ->selectRaw('obi_cod_pincode')
@@ -94,7 +88,7 @@ final class PbDateReport
                 %s
             ),
             awb_data AS (
-                SELECT AWI_NOpb, AWI_NOORDER, awi_pincode, awi_cost
+                SELECT AWI_NOORDER, awi_pincode, awi_cost
                 FROM TBTR_AWB_IPP
             ),
             serah_terima AS (
@@ -126,10 +120,7 @@ final class PbDateReport
             ),
             hadiah_ranked AS (
                 SELECT
-                    obi_kdmember,
-                    obi_tgltrans,
                     obi_nopb,
-                    total,
                     ads_kode,
                     ads_prdcd,
                     ads_qty,
@@ -144,14 +135,9 @@ final class PbDateReport
                     ) AS rn
                 FROM (
                     SELECT
-                        COALESCE(OBI_RECID, '1') AS RECID,
                         OBI_KDMEMBER,
                         OBI_TGLTRANS::DATE AS OBI_TGLTRANS,
                         OBI_NOPB,
-                        TTLORDER,
-                        TTLREAL,
-                        CB_ORDER,
-                        CB_REAL,
                         ROUND(
                             CASE
                                 WHEN COALESCE(OBI_RECID, '1') IN ('5', '6')
@@ -209,10 +195,7 @@ final class PbDateReport
             ),
             indomie_data AS (
                 SELECT
-                    obi_kdmember AS mmh,
-                    obi_tgltrans AS tglh,
                     obi_nopb AS pbhadiah,
-                    total AS total_terbesar,
                     HDH_QTY,
                     ads_kode,
                     ads_prdcd,
@@ -231,16 +214,10 @@ final class PbDateReport
                 f.obi_kdmember,
                 c.cus_namamember,
                 c.cus_alamatmember8,
-                f.obi_nostruk,
                 f.tglstruk,
-                f.obi_tipe,
-                f.obi_kdstation,
-                f.obi_cashierid,
                 f.obi_ekspedisi,
                 f.obi_kdekspedisi,
-                f.obi_flagbayar,
                 f.obi_tipebayar,
-                b.awi_pincode,
                 f.obi_service_fee,
                 CASE
                     WHEN c_rec.awi_pincode IS NOT NULL
@@ -253,7 +230,7 @@ final class PbDateReport
                     WHEN f_b.STI_pin IS NOT NULL THEN 'SUDAH pin B 1x'
                     WHEN st.sti_pin IS NOT NULL AND st.sti_receivername = '' THEN 'MASIH TMS'
                     WHEN st.sti_pin IS NOT NULL AND st.sti_receivername != '' THEN 'SUDAH INPUT pin'
-                    WHEN f.obi_kdekspedisi LIKE '%Ambil%' AND tempat.AMBIL IS NULL
+                    WHEN f.obi_kdekspedisi LIKE '%Ambil%' AND tempat.MM_AMBIL IS NULL
                         THEN 'BELUM PERNAH AMBIL DI SPI'
                     WHEN f.obi_kdekspedisi LIKE '%Ambil%' THEN 'AMBIL DI SPI'
                     ELSE 'BELUM INPUT pin'
@@ -264,7 +241,6 @@ final class PbDateReport
                 f.obi_itemorder,
                 tot.TTL_REAL AS ttl_real,
                 f.obi_realitem,
-                prmc.KDPROMO,
                 CASE
                     WHEN f.obi_kdekspedisi LIKE '%Indopaket%' THEN 'INDOPAket'
                     WHEN f.obi_kdekspedisi LIKE '%Ambil%' THEN 'AMBIL DI SPI'
@@ -290,7 +266,6 @@ final class PbDateReport
                 req.req_tgl_kirim || ' ' || req.req_request AS req,
                 h_loy.LOYALTY,
                 gt.gttipe,
-                ind.ads_kode,
                 ind.ads_prdcd,
                 ind.ads_qty,
                 ind.ads_hadiah,
@@ -302,17 +277,14 @@ final class PbDateReport
                 ON f.obi_tglpb::date = tot.DT_TGLTRANS
                 AND f.obi_notrans = tot.DT_NOTRANS::numeric
             LEFT JOIN (
-                SELECT OBI_KDMEMBER AS MM_AMBIL, COUNT(OBI_NOPB) AS AMBIL
+                SELECT DISTINCT OBI_KDMEMBER AS MM_AMBIL
                 FROM tbtr_obi_h
                 WHERE obi_kdekspedisi = 'Ambil di Stock Point Indogrosir'
                   AND obi_recid = '6'
-                GROUP BY OBI_KDMEMBER
             ) AS tempat ON f.obi_kdmember = tempat.MM_AMBIL
-            LEFT JOIN (
-                SELECT CUS_KODEMEMBER, cus_namamember, cus_alamatmember8
-                FROM TBMASTER_CUSTOMER
-                WHERE CUS_KODEIGR = '1M'
-            ) AS c ON f.obi_kdmember = c.CUS_KODEMEMBER
+            LEFT JOIN TBMASTER_CUSTOMER c
+                ON f.obi_kdmember = c.CUS_KODEMEMBER
+                AND c.CUS_KODEIGR = '1M'
             LEFT JOIN awb_data b ON f.pb = b.AWI_NOORDER
             LEFT JOIN (
                 SELECT AWI_NOORDER AS pbRECREATE, awi_pincode
@@ -358,16 +330,12 @@ final class PbDateReport
             ) AS gt ON gt.gtmm = f.obi_kdmember
             LEFT JOIN (
                 SELECT LY_KODE,
-                       SUM(CASE WHEN LY_TTD = '' OR LY_TTD IS NULL THEN 1 ELSE 0 END) AS LOYALTY
+                       COUNT(*) AS LOYALTY
                 FROM tmp.spi1m_loyalty
                 WHERE ly_tgl_kirim IS NULL
+                  AND ly_program IS NOT NULL
                 GROUP BY LY_KODE
             ) AS h_loy ON f.obi_kdmember = h_loy.LY_KODE
-            LEFT JOIN (
-                SELECT NO_PB AS PNPROMO, KODE_PROMO AS KDPROMO
-                FROM PROMO_KLIKIGR
-                WHERE KODE_PROMO = 'CKKN3'
-            ) AS prmc ON SUBSTRING(prmc.PNPROMO, 1, 7) = SUBSTRING(f.OBI_NOpb, 1, 7)
             SQL;
 
         $bindings = [
@@ -390,11 +358,24 @@ final class PbDateReport
             ->fromRaw('('.$querySql.') AS pb_tgl', $bindings)
             ->select('pb_tgl.*');
 
-        if (($filters['pin'] ?? '') === 'belumpin') {
-            $query->whereIn('pb_tgl.ket_pin', ['BELUM INPUT pin', 'SUDAH pin B 1x']);
-        } elseif (($filters['pin'] ?? '') === 'sudahpin') {
-            $query->whereIn('pb_tgl.ket_pin', ['SUDAH INPUT pin', 'SUDAH INPUT pin RECREATE']);
-        }
+        match ($filters['pin'] ?? '') {
+            'belumpin' => $query->whereIn(
+                'pb_tgl.ket_pin',
+                ['BELUM INPUT pin', 'SUDAH pin B 1x'],
+            ),
+            'sudahpin' => $query->whereIn(
+                'pb_tgl.ket_pin',
+                ['SUDAH INPUT pin', 'SUDAH INPUT pin RECREATE'],
+            ),
+            'tms' => $query->where('pb_tgl.ket_pin', 'MASIH TMS'),
+            'pinb' => $query->whereIn(
+                'pb_tgl.ket_pin',
+                ['SUDAH pin B 1x', 'SUDAH pin B 2x'],
+            ),
+            'indopaket' => $query->where('pb_tgl.obi_kdekspedisi', 'like', '%Indopaket%'),
+            'ambil' => $query->where('pb_tgl.obi_kdekspedisi', 'like', '%Ambil%'),
+            default => null,
+        };
 
         if (($filters['request'] ?? false) === true) {
             $query->whereNotNull('pb_tgl.req');
@@ -418,9 +399,9 @@ final class PbDateReport
         }
 
         return $query
-            ->orderByDesc('pb_tgl.tgl')
-            ->orderBy('pb_tgl.obi_notrans')
-            ->orderBy('pb_tgl.obi_nopb');
+            ->orderBy('pb_tgl.tgl')
+            ->orderBy('pb_tgl.pb')
+            ->orderBy('pb_tgl.obi_notrans');
     }
 
     /**
@@ -444,7 +425,21 @@ final class PbDateReport
             default => null,
         };
 
-        if (isset($filters['ekspedisi']) && $filters['ekspedisi'] !== '') {
+        if (($filters['ekspedisi'] ?? '') === 'kirim') {
+            $query->where(function (Builder $shippingQuery): void {
+                $shippingQuery
+                    ->where(function (Builder $indopaketQuery): void {
+                        $indopaketQuery
+                            ->where('obi_recid', '5')
+                            ->where('obi_kdekspedisi', 'like', '%Indopaket%');
+                    })
+                    ->orWhere(function (Builder $pickupQuery): void {
+                        $pickupQuery
+                            ->where('obi_recid', '1')
+                            ->where('obi_kdekspedisi', 'like', '%Ambil%');
+                    });
+            });
+        } elseif (isset($filters['ekspedisi']) && $filters['ekspedisi'] !== '') {
             $query->where('obi_kdekspedisi', 'like', $filters['ekspedisi'].'%');
         }
 

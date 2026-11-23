@@ -19,7 +19,6 @@ final class ReportCatalog
         'sales-awb' => 6,
         'sales-permember-perbulan' => 6,
         'seles-armada-month-bytglpb-member' => 6,
-        'pb-peritem' => 1,
         'pb-proses-item' => 1,
         'pb-proses' => 6,
         'pb-kirim-list' => 6,
@@ -70,7 +69,6 @@ final class ReportCatalog
         'sales-persupplier' => ['label' => 'Sales per supplier per bulan', 'source' => 'sales'],
         'sales-perdepartement' => ['label' => 'Sales per departemen per bulan', 'source' => 'sales'],
         'pb-pertanggal' => ['label' => 'PB per tanggal transaksi', 'source' => 'pb'],
-        'pb-peritem' => ['label' => 'PB detail per item', 'source' => 'pb'],
         'pb-proses' => ['label' => 'PB dalam proses', 'source' => 'pb'],
         'pb-proses-item' => ['label' => 'Detail item PB dalam proses', 'source' => 'pb'],
         'pb-kirim-list' => ['label' => 'Daftar PB untuk dikirim', 'source' => 'pb'],
@@ -210,7 +208,7 @@ final class ReportCatalog
     {
         $filters = ['tglstart', 'tglend'];
 
-        if (in_array($report, ['pb-peritem', 'pb-proses-item', 'pb-picking-pertanggal', 'pb-bark'], true)) {
+        if (in_array($report, ['pb-proses-item', 'pb-picking-pertanggal', 'pb-bark'], true)) {
             $filters[] = 'plu';
         }
 

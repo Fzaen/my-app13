@@ -7,6 +7,7 @@ use App\Models\Auth\DatabaseUser;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
@@ -26,6 +27,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::define(
+            'access-manual-book',
+            static fn (DatabaseUser $user): bool => strtoupper(trim((string) $user->getAuthIdentifier())) === 'ED1',
+        );
+
         Auth::provider('tbmaster', function ($app, array $config): TbmasterUserProvider {
             return new TbmasterUserProvider($app['hash'], $config['model']);
         });

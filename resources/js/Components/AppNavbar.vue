@@ -9,6 +9,8 @@ import DropdownLink from "@/Components/DropdownLink.vue";
 const page = usePage();
 const isAuth =
     page.props.auth?.user !== undefined && page.props.auth?.user !== null;
+const isEd1 =
+    (page.props.auth?.user?.name ?? "").trim().toUpperCase() === "ED1";
 const isDarkMode = ref(document.documentElement.classList.contains("dark"));
 
 const mobileMenuOpen = ref(false);
@@ -64,45 +66,57 @@ const reportHref = (report, filters = {}, startDate = reportDateStart) => {
 const navigationMenus = [
     {
         label: "Klik",
-        route: "pb.all",
         items: [
             {
-                label: "All PB H-7",
-                href: reportHref("pb-proses", { recid: "all" }, reportDateLastSevenDays),
-            },
-            {
-                label: "PB Proses",
-                href: reportHref("pb-proses", { recid: "proses" }),
-            },
-            {
-                label: "All PB Item H-7",
-                href: reportHref("pb-peritem", {}, reportDateLastSevenDays),
-            },
-            {
-                label: "PB Proses Item",
-                href: reportHref("pb-proses-item", { recid: "batas" }, reportDateLastSevenDays),
-            },
-            {
-                label: "List Kirim All",
-                href: reportHref("pb-proses", { recid: "5" }),
-            },
-            {
-                label: "List Belum PIN",
-                href: reportHref("pb-proses", {
-                    recid: "proses",
-                    pin: "belumpin",
-                }),
-            },
-            {
-                label: "Ambil di SPI",
-                href: reportHref("pb-proses", {
-                    recid: "proses",
-                    ekspedisi: "Ambil",
-                }),
-            },
-            {
-                label: "List Request Kirim",
-                href: reportHref("pb-proses", { recid: "proses", request: "1" }),
+                label: "PB",
+                children: [
+                    { label: "PB All", route: "pb.all" },
+                    {
+                        label: "All PB H-7",
+                        href: reportHref(
+                            "pb-proses",
+                            { recid: "all" },
+                            reportDateLastSevenDays,
+                        ),
+                    },
+                    {
+                        label: "PB Proses",
+                        href: reportHref("pb-proses", { recid: "proses" }),
+                    },
+                    {
+                        label: "PB Proses Item",
+                        href: reportHref(
+                            "pb-proses-item",
+                            { recid: "batas" },
+                            reportDateLastSevenDays,
+                        ),
+                    },
+                    {
+                        label: "List Kirim All",
+                        href: reportHref("pb-proses", { recid: "5" }),
+                    },
+                    {
+                        label: "List Belum PIN",
+                        href: reportHref("pb-proses", {
+                            recid: "proses",
+                            pin: "belumpin",
+                        }),
+                    },
+                    {
+                        label: "Ambil di SPI",
+                        href: reportHref("pb-proses", {
+                            recid: "proses",
+                            ekspedisi: "Ambil",
+                        }),
+                    },
+                    {
+                        label: "List Request Kirim",
+                        href: reportHref("pb-proses", {
+                            recid: "proses",
+                            request: "1",
+                        }),
+                    },
+                ],
             },
         ],
     },
@@ -119,6 +133,24 @@ const navigationMenus = [
             },
         ],
     },
+    ...(isEd1
+        ? [
+              {
+                  label: "Manual Book",
+                  items: [
+                      {
+                          label: "FAQ",
+                          children: [
+                              {
+                                  label: "BA Online",
+                                  route: "manual-book.faq.ba-online",
+                              },
+                          ],
+                      },
+                  ],
+              },
+          ]
+        : []),
     {
         label: "Workspace",
         items: [
@@ -536,6 +568,16 @@ const toggleMobileSubmenu = (itemKey, parentKey) => {
                     </template>
                     <!-- Jika belum login -->
                     <template v-else>
+                        <button
+                            type="button"
+                            class="rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                            :aria-label="
+                                isDarkMode ? 'Gunakan mode terang' : 'Gunakan mode gelap'
+                            "
+                            @click="toggleDarkMode"
+                        >
+                            {{ isDarkMode ? "Mode terang" : "Mode gelap" }}
+                        </button>
                         <Link
                             :href="route('login')"
                             class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 transition-all duration-200 hover:text-gray-900 hover:bg-gray-50"
@@ -797,6 +839,16 @@ const toggleMobileSubmenu = (itemKey, parentKey) => {
                 </template>
 
                 <template v-else>
+                    <button
+                        type="button"
+                        class="flex w-full items-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+                        :aria-label="
+                            isDarkMode ? 'Gunakan mode terang' : 'Gunakan mode gelap'
+                        "
+                        @click="toggleDarkMode"
+                    >
+                        {{ isDarkMode ? "Mode terang" : "Mode gelap" }}
+                    </button>
                     <Link
                         :href="route('login')"
                         @click="closeMobileMenu"

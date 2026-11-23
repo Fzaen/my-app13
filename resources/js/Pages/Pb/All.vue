@@ -1,7 +1,9 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import Modal from "@/Components/Modal.vue";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout.vue";
 import { Head, Link, router } from "@inertiajs/vue3";
+import { copyTextToClipboard } from "@/clipboard";
 
 const props = defineProps({
     rows: {
@@ -16,6 +18,9 @@ const props = defineProps({
 
 const searchInput = ref(props.search);
 const copyMessage = ref("");
+const copyFallbackOpen = ref(false);
+const copyFallbackText = ref("");
+const copyFallbackInput = ref(null);
 
 watch(
     () => props.search,
@@ -95,15 +100,28 @@ const copyRows = async () => {
         ),
     ];
 
+    const text = values.map((value) => value.join("\t")).join("\n");
+
     try {
-        await navigator.clipboard.writeText(
-            values.map((value) => value.join("\t")).join("\n"),
-        );
+        await copyTextToClipboard(text);
+        copyFallbackOpen.value = false;
         copyMessage.value = `${filteredRows.value.length} baris berhasil disalin.`;
-    } catch {
+    } catch (error) {
+        copyFallbackText.value = text;
+        copyFallbackOpen.value = true;
         copyMessage.value =
-            "Tidak dapat menyalin. Periksa izin clipboard browser.";
+            error instanceof Error
+                ? `Browser membatasi salin otomatis (${error.message}). Tekan Ctrl+C pada isi yang sudah dipilih.`
+                : "Browser membatasi salin otomatis. Tekan Ctrl+C pada isi yang sudah dipilih.";
+
+        await nextTick();
+        selectCopyFallback();
     }
+};
+
+const selectCopyFallback = () => {
+    copyFallbackInput.value?.focus();
+    copyFallbackInput.value?.select();
 };
 
 const formatNumber = (value) =>
@@ -234,7 +252,7 @@ const cellClasses = (row, column) => {
                             class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
                             @click="copyRows"
                         >
-                            Salin
+                            Salin seluruh tabel
                         </button>
                         <a
                             :href="exportHref"
@@ -310,5 +328,29 @@ const cellClasses = (row, column) => {
                 </p>
             </section>
         </div>
+
+        <Modal
+            :show="copyFallbackOpen"
+            max-width="4xl"
+            @close="copyFallbackOpen = false"
+        >
+            <section class="space-y-4 p-5 dark:bg-gray-900">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    Salin seluruh tabel
+                </h2>
+                <p class="text-sm text-gray-600 dark:text-gray-300">
+                    Isi tabel sudah dipilih. Tekan Ctrl+C untuk menyalin, lalu tutup jendela ini.
+                </p>
+                <textarea
+                    ref="copyFallbackInput"
+                    v-model="copyFallbackText"
+                    readonly
+                    rows="12"
+                    class="w-full rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-xs text-gray-900 selection:bg-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    @click="selectCopyFallback"
+                    @focus="selectCopyFallback"
+                />
+            </section>
+        </Modal>
     </AuthenticatedLayout>
 </template>

@@ -7,6 +7,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -65,10 +66,18 @@ class PbActionController extends Controller
         '6',
     ];
 
-    public function createGift(Request $request): Response
+    public function createGift(Request $request): Response|JsonResponse
     {
-        $order = $this->findGiftOrder($this->validateOrderIdentifiers($request));
+        $identifiers = $this->validateOrderIdentifiers($request);
         $connection = DB::connection();
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'receipt' => $this->findSavedGiftReceipt($connection, $identifiers),
+            ]);
+        }
+
+        $order = $this->findGiftOrder($identifiers);
         $this->assertGiftCanBeSaved($connection, $order);
 
         return Inertia::render('Pb/Action', [
@@ -92,7 +101,7 @@ class PbActionController extends Controller
         ]);
     }
 
-    public function storeGift(Request $request): RedirectResponse
+    public function storeGift(Request $request): JsonResponse|RedirectResponse
     {
         $input = $request->validate([
             ...$this->orderIdentifierRules(),
@@ -102,36 +111,57 @@ class PbActionController extends Controller
         $order = $this->findGiftOrder($input);
         $returnFilters = $this->validatedReturnFilters($request, (string) $order->obi_tglpb);
         $connection = DB::connection();
+        $createdAt = now();
 
-        $connection->transaction(function () use ($connection, $order, $input): void {
+        $gift = [
+            'hdh_nopb' => (string) $order->pb,
+            'hdh_mm' => (string) $order->obi_kdmember,
+            'hdh_tgl' => (string) $order->obi_tglpb,
+            'hdh_notrans' => str_pad((string) $order->obi_notrans, 5, '0', STR_PAD_LEFT),
+            'hdh_prdcd' => (string) $order->ads_prdcd,
+            'hdh_qty' => (int) $order->ads_qty,
+            'hdh_create_at' => $createdAt,
+            'hdh_nama' => $input['penginput'],
+            'hdh_kodepromo' => $order->ads_kode,
+        ];
+        $giftRecords = [$gift];
+        $bonusPromos = ['ADSDEC3', 'ADS26JAN4', 'ADS26FEB3', 'ADS26MAR3'];
+
+        if (in_array($order->ads_kode, $bonusPromos, true)) {
+            $giftRecords[] = [
+                ...$gift,
+                'hdh_nopb' => (string) $order->pb.'B',
+                'hdh_prdcd' => in_array($order->ads_kode, ['ADS26FEB3', 'ADS26MAR3'], true)
+                    ? '0060410'
+                    : '1252630',
+                'hdh_qty' => 3,
+            ];
+        }
+
+        $connection->transaction(function () use ($connection, $order, $giftRecords): void {
             $this->assertGiftCanBeSaved($connection, $order);
 
-            $gift = [
-                'hdh_nopb' => (string) $order->pb,
-                'hdh_mm' => (string) $order->obi_kdmember,
-                'hdh_tgl' => (string) $order->obi_tglpb,
-                'hdh_notrans' => str_pad((string) $order->obi_notrans, 5, '0', STR_PAD_LEFT),
-                'hdh_prdcd' => (string) $order->ads_prdcd,
-                'hdh_qty' => (int) $order->ads_qty,
-                'hdh_create_at' => now(),
-                'hdh_nama' => $input['penginput'],
-                'hdh_kodepromo' => $order->ads_kode,
-            ];
-
-            $connection->table('tmp.hadiah')->insert($gift);
-
-            $bonusPromos = ['ADSDEC3', 'ADS26JAN4', 'ADS26FEB3', 'ADS26MAR3'];
-
-            if (in_array($order->ads_kode, $bonusPromos, true)) {
-                $gift['hdh_nopb'] = (string) $order->pb.'B';
-                $gift['hdh_prdcd'] = in_array($order->ads_kode, ['ADS26FEB3', 'ADS26MAR3'], true)
-                    ? '0060410'
-                    : '1252630';
-                $gift['hdh_qty'] = 3;
-
-                $connection->table('tmp.hadiah')->insert($gift);
+            foreach ($giftRecords as $giftRecord) {
+                $this->temporaryTable($connection, 'hadiah')->insert($giftRecord);
             }
         });
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Data hadiah berhasil disimpan.',
+                'receipt' => [
+                    'pb' => (string) $order->pb,
+                    'notrans' => str_pad((string) $order->obi_notrans, 5, '0', STR_PAD_LEFT),
+                    'kdmm' => (string) $order->obi_kdmember,
+                    'namamm' => $order->cus_namamember,
+                    'gift_name' => $order->ads_hadiah,
+                    'plu' => (string) $order->ads_prdcd,
+                    'qty' => (int) $order->ads_qty,
+                    'penginput' => $input['penginput'],
+                    'created_at' => $createdAt->toIso8601String(),
+                ],
+            ]);
+        }
 
         return $this->redirectToReport($returnFilters, 'Data hadiah berhasil disimpan.');
     }
@@ -144,7 +174,7 @@ class PbActionController extends Controller
         ]);
 
         $connection = DB::connection();
-        $loyaltyRecords = $connection->table('tmp.spi1m_loyalty')
+        $loyaltyRecords = $this->temporaryTable($connection, 'spi1m_loyalty')
             ->where('ly_kode', $input['kdmm'])
             ->whereNull('ly_tgl_kirim')
             ->whereNotNull('ly_program')
@@ -183,6 +213,68 @@ class PbActionController extends Controller
         ]);
     }
 
+    public function loyaltyDetails(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'kdmm' => ['required', 'string', 'max:20'],
+        ]);
+
+        $connection = DB::connection();
+        $records = $this->temporaryTable($connection, 'spi1m_loyalty')
+            ->where('ly_kode', $input['kdmm'])
+            ->whereNull('ly_tgl_kirim')
+            ->whereNotNull('ly_program')
+            ->orderBy('ly_program')
+            ->get(['ly_program', 'ly_hadiah', 'ly_periode', 'ly_ttd', 'ly_tgl_kirim'])
+            ->map(fn (object $record): array => [
+                'program' => $record->ly_program,
+                'gift' => $record->ly_hadiah,
+                'period' => $record->ly_periode,
+                'signature' => $record->ly_ttd,
+                'sent_at' => $record->ly_tgl_kirim,
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'member' => [
+                'code' => $input['kdmm'],
+                'name' => $connection->table('tbmaster_customer')
+                    ->where('cus_kodemember', $input['kdmm'])
+                    ->value('cus_namamember'),
+            ],
+            'records' => $records,
+        ]);
+    }
+
+    public function driverDetails(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'pb' => ['required', 'string', 'max:30', 'regex:/^[0-9]+$/'],
+        ]);
+
+        $drivers = DB::connection()
+            ->table('tbtr_serahterima_ipp')
+            ->where('sti_noorder', 'like', '%'.$input['pb'].'%')
+            ->orderBy('sti_tglserahterima')
+            ->select([
+                'sti_noawb as no_awb',
+                'sti_noorder as order_number',
+                'sti_tipeproses as process_type',
+                'sti_penerima as member_name',
+                'sti_codvalue as cod_value',
+                'sti_driverid as driver_id',
+                'sti_drivername as driver_name',
+                'sti_driverphone as driver_phone',
+                'sti_vehicleno as vehicle_number',
+            ])
+            ->selectRaw("TO_CHAR(sti_tglserahterima, 'DD-MON-YY') AS handover_date")
+            ->selectRaw("TO_CHAR(sti_tglserahterima, 'HH24:MI:SS') AS handover_time")
+            ->get();
+
+        return response()->json(['drivers' => $drivers]);
+    }
+
     public function updateLoyalty(Request $request): RedirectResponse
     {
         $input = $request->validate([
@@ -196,7 +288,7 @@ class PbActionController extends Controller
         $connection = DB::connection();
 
         $connection->transaction(function () use ($connection, $input): void {
-            $loyaltyQuery = $connection->table('tmp.spi1m_loyalty')
+            $loyaltyQuery = $this->temporaryTable($connection, 'spi1m_loyalty')
                 ->where('ly_kode', $input['kdmm'])
                 ->where('ly_program', $input['program'])
                 ->whereNull('ly_tgl_kirim');
@@ -217,7 +309,7 @@ class PbActionController extends Controller
         return $this->redirectToReport($returnFilters, 'Data loyalty berhasil diperbarui.');
     }
 
-    public function requestForm(Request $request, string $mode): Response
+    public function requestForm(Request $request, string $mode): Response|JsonResponse
     {
         abort_unless(in_array($mode, ['create', 'edit'], true), 404);
 
@@ -231,7 +323,7 @@ class PbActionController extends Controller
             abort_if($existingRequest === null, 404);
         }
 
-        return Inertia::render('Pb/Action', [
+        $pageData = [
             'action' => 'request',
             'mode' => $mode,
             'record' => [
@@ -249,7 +341,13 @@ class PbActionController extends Controller
             'loyaltyRecords' => [],
             'selectedProgram' => null,
             'returnFilters' => $this->validatedReturnFilters($request, (string) $order->obi_tglpb),
-        ]);
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json($pageData);
+        }
+
+        return Inertia::render('Pb/Action', $pageData);
     }
 
     public function saveRequest(Request $request): RedirectResponse
@@ -277,7 +375,7 @@ class PbActionController extends Controller
             if ($input['mode'] === 'create') {
                 abort_if($existingRequest !== null, 409, 'Request kirim sudah dibuat. Muat ulang laporan.');
 
-                $connection->table('tmp.spi1m_requestkirim')->insert([
+                $this->temporaryTable($connection, 'spi1m_requestkirim')->insert([
                     'req_nopb' => (string) $order->pb,
                     'req_tglpb' => (string) $order->obi_tglpb,
                     'req_kodemm' => (string) $order->obi_kdmember,
@@ -328,6 +426,60 @@ class PbActionController extends Controller
         abort_if($order === null, 404);
 
         return $order;
+    }
+
+    /**
+     * @param  array<string, mixed>  $identifiers
+     * @return array<string, mixed>
+     */
+    private function findSavedGiftReceipt(Connection $connection, array $identifiers): array
+    {
+        $pb = rtrim(substr((string) $identifiers['nopb'], 0, 7), '/');
+        $notrans = str_pad((string) $identifiers['notrans'], 5, '0', STR_PAD_LEFT);
+
+        $receipt = $this->temporaryTable($connection, 'hadiah as gift')
+            ->leftJoin('tbmaster_customer as customer', function (JoinClause $join): void {
+                $join->on('customer.cus_kodemember', '=', 'gift.hdh_mm')
+                    ->where('customer.cus_kodeigr', '=', '1M');
+            })
+            ->leftJoin(
+                config('database.temporary_schema', 'tmp').'.promo_ads as promo',
+                'promo.ads_kode',
+                '=',
+                'gift.hdh_kodepromo',
+            )
+            ->where('gift.hdh_nopb', $pb)
+            ->whereDate('gift.hdh_tgl', $identifiers['tglpb'])
+            ->where('gift.hdh_notrans', $notrans)
+            ->where('gift.hdh_mm', $identifiers['kdmm'])
+            ->select([
+                'gift.hdh_nopb as pb',
+                'gift.hdh_notrans as notrans',
+                'gift.hdh_mm as kdmm',
+                'customer.cus_namamember as namamm',
+                'promo.ads_hadiah as gift_name',
+                'gift.hdh_prdcd as plu',
+                'gift.hdh_qty as qty',
+                'gift.hdh_nama as penginput',
+                'gift.hdh_create_at as created_at',
+            ])
+            ->first();
+
+        abort_if($receipt === null, 404);
+
+        return [
+            'pb' => (string) $receipt->pb,
+            'notrans' => (string) $receipt->notrans,
+            'kdmm' => (string) $receipt->kdmm,
+            'namamm' => $receipt->namamm,
+            'gift_name' => $receipt->gift_name,
+            'plu' => (string) $receipt->plu,
+            'qty' => (int) $receipt->qty,
+            'penginput' => (string) $receipt->penginput,
+            'created_at' => $receipt->created_at === null
+                ? null
+                : CarbonImmutable::parse($receipt->created_at)->toIso8601String(),
+        ];
     }
 
     /**
@@ -403,7 +555,7 @@ class PbActionController extends Controller
             'Kuantitas hadiah pada promo tidak valid.',
         );
 
-        $exists = $connection->table('tmp.hadiah')
+        $exists = $this->temporaryTable($connection, 'hadiah')
             ->whereIn('hdh_nopb', [(string) $order->pb, (string) $order->pb.'B'])
             ->exists();
 
@@ -421,10 +573,15 @@ class PbActionController extends Controller
 
     private function shippingRequestQuery(Connection $connection, object $order): Builder
     {
-        return $connection->table('tmp.spi1m_requestkirim')
+        return $this->temporaryTable($connection, 'spi1m_requestkirim')
             ->where('req_nopb', (string) $order->pb)
             ->where('req_tglpb', (string) $order->obi_tglpb)
             ->where('req_kodemm', (string) $order->obi_kdmember);
+    }
+
+    private function temporaryTable(Connection $connection, string $table): Builder
+    {
+        return $connection->table(config('database.temporary_schema', 'tmp').'.'.$table);
     }
 
     /**
@@ -445,8 +602,16 @@ class PbActionController extends Controller
             'return_tglstart' => ['required', 'date_format:Y-m-d', 'before_or_equal:return_tglend'],
             'return_tglend' => ['required', 'date_format:Y-m-d', 'after_or_equal:return_tglstart'],
             'return_recid' => ['required', Rule::in(self::RECID_FILTERS)],
-            'return_ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket'])],
-            'return_pin' => ['nullable', Rule::in(['belumpin', 'sudahpin'])],
+            'return_ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket', 'kirim'])],
+            'return_pin' => ['nullable', Rule::in([
+                'all',
+                'belumpin',
+                'sudahpin',
+                'tms',
+                'pinb',
+                'indopaket',
+                'ambil',
+            ])],
             'return_kdmm' => ['nullable', 'string', 'max:20'],
             'return_nopb' => ['nullable', 'string', 'max:30'],
             'return_request' => ['required', 'boolean'],

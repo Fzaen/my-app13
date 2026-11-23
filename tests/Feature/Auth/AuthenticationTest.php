@@ -14,7 +14,7 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const DATABASE_SITE = 'spi1m_banjarbaru_production';
+    private const DATABASE_SITE = 'spi1m_banjarbaru_sim';
 
     protected function setUp(): void
     {
@@ -23,7 +23,7 @@ class AuthenticationTest extends TestCase
         config([
             'auth.providers.users.driver' => 'tbmaster',
             'auth.providers.users.model' => DatabaseUser::class,
-            'database.sites.'.self::DATABASE_SITE.'.connection' => 'sqlite',
+            'database.sites.'.self::DATABASE_SITE.'.connection' => self::DATABASE_SITE,
         ]);
         Auth::forgetGuards();
 

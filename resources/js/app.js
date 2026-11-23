@@ -6,13 +6,12 @@ import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import { createApp, h } from "vue";
 import { ZiggyVue } from "../../vendor/tightenco/ziggy";
 
-const appName = import.meta.env.VITE_APP_NAME || "Laravel";
 const savedTheme = window.localStorage.getItem("theme");
 
-document.documentElement.classList.toggle("dark", savedTheme === "dark");
+document.documentElement.classList.toggle("dark", savedTheme !== "light");
 
 createInertiaApp({
-    title: (title) => `${title} - ${appName}`,
+    title: (title) => title || "SPI",
     resolve: (name) =>
         resolvePageComponent(
             `./Pages/${name}.vue`,

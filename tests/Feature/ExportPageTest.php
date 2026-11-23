@@ -56,10 +56,7 @@ class ExportPageTest extends TestCase
             ['member'],
             $options->get('promo-detail-mypoint')['requiredFilters'],
         );
-        $this->assertSame(
-            ['tglstart', 'tglend', 'plu'],
-            $options->get('pb-peritem')['filters'],
-        );
+        $this->assertSame(null, $options->get('pb-peritem'));
         $this->assertSame(1, $options->get('sales-perstruk')['maxPeriodMonths']);
         $this->assertSame(6, $options->get('pb-proses')['maxPeriodMonths']);
         $this->assertSame(1, $options->get('log-bpb-all')['maxPeriodMonths']);
@@ -163,7 +160,6 @@ class ExportPageTest extends TestCase
     {
         return [
             'PB per transaction date' => ['pb-pertanggal'],
-            'PB item detail' => ['pb-peritem'],
             'PB orders in process' => ['pb-proses'],
             'PB process item detail' => ['pb-proses-item'],
             'PB shipping list' => ['pb-kirim-list'],
@@ -338,7 +334,7 @@ class ExportPageTest extends TestCase
         $query = LogisticsReport::forExport('log-stock', [
             'tglstart' => '2026-09-01',
             'tglend' => '2026-09-30',
-        ], 'sqlite');
+        ], 'spi1m_banjarbaru_sim');
         $sql = $query->toSql();
 
         $this->assertStringContainsString('RSL_QTY_07 + RSL_QTY_08 + RSL_QTY_09', $sql);
@@ -381,7 +377,7 @@ class ExportPageTest extends TestCase
             'tglstart' => '2026-09-01',
             'tglend' => '2026-09-30',
             'supplier' => $maliciousSupplier,
-        ], 'sqlite');
+        ], 'spi1m_banjarbaru_sim');
 
         $this->assertStringNotContainsString($maliciousSupplier, $query->toSql());
         $this->assertContains('2026-09-01', $query->getBindings());
@@ -418,7 +414,7 @@ class ExportPageTest extends TestCase
 
     public function test_sales_export_writes_columns_with_matching_headings_as_text(): void
     {
-        $export = new SalesReportExport('sales-peritem', [], 'sqlite');
+        $export = new SalesReportExport('sales-peritem', [], 'spi1m_banjarbaru_sim');
         $worksheet = (new Spreadsheet)->getActiveSheet();
         $textHeadings = [
             'PLU',
@@ -464,7 +460,7 @@ class ExportPageTest extends TestCase
 
     public function test_mypoint_export_preserves_transaction_and_phone_identifiers_as_text(): void
     {
-        $export = new SalesReportExport('promo-detail-mypoint', [], 'sqlite');
+        $export = new SalesReportExport('promo-detail-mypoint', [], 'spi1m_banjarbaru_sim');
         $worksheet = (new Spreadsheet)->getActiveSheet();
 
         foreach (['TRX', 'NO_HP', 'TOKO'] as $index => $heading) {
@@ -586,7 +582,7 @@ class ExportPageTest extends TestCase
             'tglstart' => '2026-09-01',
             'tglend' => '2026-09-30',
             'member' => 'GJ8500',
-        ], 'sqlite');
+        ], 'spi1m_banjarbaru_sim');
 
         $this->assertContains('2026-09-01', $query->getBindings());
         $this->assertContains('2026-09-30', $query->getBindings());
@@ -594,35 +590,10 @@ class ExportPageTest extends TestCase
         $this->assertSame(11, count($query->columns));
     }
 
-    public function test_pb_item_export_binds_the_plu_filter_as_a_value(): void
-    {
-        Excel::fake();
-
-        $user = (new DatabaseUser)->forceFill(['userid' => 'SIM-TEST']);
-        $maliciousPlu = "123456') OR 1=1 --";
-
-        $this->actingAs($user)
-            ->withSession(['selected_database' => 'spi1m_banjarbaru_sim'])
-            ->post(route('sales.export.download'), [
-                'laporan' => 'pb-peritem',
-                'tglstart' => '2026-09-01',
-                'tglend' => '2026-09-02',
-                'plu' => $maliciousPlu,
-            ])
-            ->assertOk();
-
-        Excel::assertDownloaded('pb-peritem_2026-09-01_2026-09-02.xlsx', function (SalesReportExport $export) use ($maliciousPlu): bool {
-            $query = $export->query();
-
-            return ! str_contains($query->toSql(), $maliciousPlu)
-                && in_array($maliciousPlu, $query->getBindings(), true);
-        });
-    }
-
     public function test_sales_report_query_uses_the_currently_selected_connection(): void
     {
         $previousConnection = DB::getDefaultConnection();
-        DB::setDefaultConnection('sqlite');
+        DB::setDefaultConnection('spi1m_banjarbaru_sim');
 
         try {
             $query = SalesReport::salesPerItem([
@@ -630,7 +601,7 @@ class ExportPageTest extends TestCase
                 'tglend' => '2026-09-02',
             ]);
 
-            $this->assertSame(DB::connection('sqlite'), $query->getConnection());
+            $this->assertSame(DB::connection('spi1m_banjarbaru_sim'), $query->getConnection());
         } finally {
             DB::setDefaultConnection($previousConnection);
         }
@@ -639,7 +610,7 @@ class ExportPageTest extends TestCase
     public function test_purchase_order_report_query_uses_the_currently_selected_connection(): void
     {
         $previousConnection = DB::getDefaultConnection();
-        DB::setDefaultConnection('sqlite');
+        DB::setDefaultConnection('spi1m_banjarbaru_sim');
 
         try {
             $query = PurchaseOrderReport::forExport('pb-pertanggal', [
@@ -647,7 +618,7 @@ class ExportPageTest extends TestCase
                 'tglend' => '2026-09-02',
             ]);
 
-            $this->assertSame(DB::connection('sqlite'), $query->getConnection());
+            $this->assertSame(DB::connection('spi1m_banjarbaru_sim'), $query->getConnection());
         } finally {
             DB::setDefaultConnection($previousConnection);
         }

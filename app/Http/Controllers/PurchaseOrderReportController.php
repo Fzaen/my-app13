@@ -8,6 +8,8 @@ use App\Models\ExportModel\PbDateReport;
 use App\Models\ExportModel\PurchaseOrderReport;
 use App\Models\ExportModel\ReportCatalog;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -25,7 +27,6 @@ class PurchaseOrderReportController extends Controller
      */
     private const REPORTS = [
         'pb-proses' => 'PB Proses',
-        'pb-peritem' => 'All PB Item H-7',
         'pb-proses-item' => 'PB Proses Item',
         'pb-kirim-list' => 'List Kirim All',
         'pb-belum-pin' => 'List Belum PIN',
@@ -37,9 +38,9 @@ class PurchaseOrderReportController extends Controller
      * @var array<string, array<string, string>>
      */
     private const DEFAULT_FILTERS = [
-        'pb-proses' => ['recid' => 'proses'],
+        'pb-proses' => ['recid' => 'proses', 'pin' => 'all'],
         'pb-proses-item' => ['recid' => 'batas'],
-        'pb-kirim-list' => ['recid' => '5'],
+        'pb-kirim-list' => ['recid' => 'all', 'ekspedisi' => 'kirim'],
         'pb-belum-pin' => ['recid' => 'proses', 'pin' => 'belumpin'],
         'pb-ambil-spi' => ['recid' => 'proses', 'ekspedisi' => 'Ambil'],
         'pb-request-kirim' => ['request' => '1'],
@@ -52,25 +53,12 @@ class PurchaseOrderReportController extends Controller
         $filters = $this->validatedFilters($request, $report);
         $search = trim($filters['search'] ?? '');
         $perPage = (int) ($filters['per_page'] ?? 25);
-        $dateFilters = [
-            'tglstart' => $filters['tglstart'],
-            'tglend' => $filters['tglend'],
-        ];
-
-        if ($report === 'pb-peritem') {
-            $query = PurchaseOrderReport::forTable(
-                $report,
-                $dateFilters,
-                DB::getDefaultConnection(),
-                $search,
-            );
-        } else {
-            $query = PbDateReport::query(
-                [...$dateFilters, ...$this->reportFilters($filters)],
-                DB::getDefaultConnection(),
-                $search,
-            );
-        }
+        $query = $this->reportQuery(
+            $report,
+            $filters,
+            DB::getDefaultConnection(),
+            $search,
+        );
 
         $rows = $query->simplePaginate($perPage)->appends($filters);
 
@@ -88,6 +76,22 @@ class PurchaseOrderReportController extends Controller
         ]);
     }
 
+    public function copy(Request $request, string $report): JsonResponse
+    {
+        abort_unless(array_key_exists($report, self::REPORTS), 404);
+
+        $filters = $this->validatedFilters($request, $report);
+        $search = trim($filters['search'] ?? '');
+        $rows = $this->reportQuery(
+            $report,
+            $filters,
+            DB::getDefaultConnection(),
+            $search,
+        )->get();
+
+        return response()->json(['rows' => $rows]);
+    }
+
     public function export(Request $request, string $report): BinaryFileResponse
     {
         abort_unless(array_key_exists($report, self::REPORTS), 404);
@@ -100,8 +104,17 @@ class PurchaseOrderReportController extends Controller
         ];
         $connectionName = DB::getDefaultConnection();
 
-        $export = $report === 'pb-peritem'
-            ? new SalesReportExport($report, $dateFilters, $connectionName, $search)
+        $export = $report === 'pb-proses-item'
+            ? new SalesReportExport(
+                $report,
+                [
+                    ...$dateFilters,
+                    'recid' => $filters['recid'] ?? 'batas',
+                    'ket_item' => $filters['ket_item'] ?? '',
+                ],
+                $connectionName,
+                $search,
+            )
             : new PbDateReportExport(
                 [...$dateFilters, ...$this->reportFilters($filters)],
                 $connectionName,
@@ -115,10 +128,45 @@ class PurchaseOrderReportController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function reportQuery(
+        string $report,
+        array $filters,
+        string $connectionName,
+        string $search,
+    ): Builder {
+        $dateFilters = [
+            'tglstart' => $filters['tglstart'],
+            'tglend' => $filters['tglend'],
+        ];
+
+        if ($report === 'pb-proses-item') {
+            return PurchaseOrderReport::forTable(
+                $report,
+                [
+                    ...$dateFilters,
+                    'recid' => $filters['recid'] ?? 'batas',
+                    'ket_item' => $filters['ket_item'] ?? '',
+                ],
+                $connectionName,
+                $search,
+            );
+        }
+
+        return PbDateReport::query(
+            [...$dateFilters, ...$this->reportFilters($filters)],
+            $connectionName,
+            $search,
+        );
+    }
+
+    /**
      * @return array{
      *     tglstart: string,
      *     tglend: string,
      *     recid?: string|null,
+     *     ket_item?: string|null,
      *     ekspedisi?: string|null,
      *     pin?: string|null,
      *     kdmm?: string|null,
@@ -148,8 +196,19 @@ class PurchaseOrderReportController extends Controller
                 'nullable',
                 Rule::in(['all', 'proses', 'batas', 'notnull', 'null', 'B', '1', '2', '3', '5', '6']),
             ],
-            'ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket'])],
-            'pin' => ['nullable', Rule::in(['belumpin', 'sudahpin'])],
+            ...($report === 'pb-proses-item'
+                ? ['ket_item' => ['nullable', Rule::in(['PICKING', 'BATAL', 'PICKING SCAN 0'])]]
+                : []),
+            'ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket', 'kirim'])],
+            'pin' => ['nullable', Rule::in([
+                'all',
+                'belumpin',
+                'sudahpin',
+                'tms',
+                'pinb',
+                'indopaket',
+                'ambil',
+            ])],
             'kdmm' => ['nullable', 'string', 'max:20'],
             'nopb' => ['nullable', 'string', 'max:30'],
             'request' => ['nullable', 'boolean'],

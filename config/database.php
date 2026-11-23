@@ -19,23 +19,23 @@ $databaseSites = [];
 $siteConnections = [];
 
 foreach ($databaseSiteKeys as $key) {
-    $environmentPrefix = 'PG_' . strtoupper($key);
-    $databaseName = env($environmentPrefix . '_DATABASE', $key);
+    $environmentPrefix = 'PG_'.strtoupper($key);
+    $databaseName = env($environmentPrefix.'_DATABASE', $key);
     $databaseSites[$key] = [
         'label' => $databaseName,
         'connection' => $key,
     ];
     $siteConnections[$key] = [
         'driver' => 'pgsql',
-        'host' => env($environmentPrefix . '_HOST'),
-        'port' => env($environmentPrefix . '_PORT', '5432'),
+        'host' => env($environmentPrefix.'_HOST'),
+        'port' => env($environmentPrefix.'_PORT', '5432'),
         'database' => $databaseName,
-        'username' => env($environmentPrefix . '_USERNAME'),
-        'password' => env($environmentPrefix . '_PASSWORD'),
+        'username' => env($environmentPrefix.'_USERNAME'),
+        'password' => env($environmentPrefix.'_PASSWORD'),
         'charset' => 'utf8',
         'prefix' => '',
         'prefix_indexes' => true,
-        'search_path' => env($environmentPrefix . '_SCHEMA', 'public'),
+        'search_path' => env($environmentPrefix.'_SCHEMA', 'public'),
         'sslmode' => env('DB_SSLMODE', 'prefer'),
     ];
 }
@@ -59,6 +59,7 @@ return [
     'fallback_connection' => env('DB_CONNECTION', 'sqlite'),
 
     'default_site' => env('DB_DEFAULT_SITE', 'spi1m_banjarbaru_production'),
+    'temporary_schema' => env('DB_TEMP_SCHEMA', 'tmp'),
 
     'sites' => $databaseSites,
 
@@ -198,7 +199,7 @@ return [
 
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')) . '-database-'),
+            'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
             'persistent' => env('REDIS_PERSISTENT', false),
         ],
 

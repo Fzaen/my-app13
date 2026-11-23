@@ -95,6 +95,7 @@ class PluInfo extends Model
             ['value' => 'slp', 'label' => 'SLP'],
             ['value' => 'stock-planogram', 'label' => 'LPP vs plano'],
             ['value' => 'sales-monthly', 'label' => 'Penjualan per bulan (ringkasan)'],
+            ['value' => 'sales-chart', 'label' => 'SALES'],
             ['value' => 'sales', 'label' => 'Riwayat transaksi sales'],
             ['value' => 'so-ic', 'label' => 'SO IC'],
             ['value' => 'so-daily', 'label' => 'SO harian'],
@@ -387,6 +388,7 @@ class PluInfo extends Model
                         ->get(),
                     'stock-planogram' => $this->stockAndPlanogram($connectionName, $plu),
                     'sales-monthly' => $this->monthlySales($connectionName, $plu),
+                    'sales-chart' => $this->monthlySalesChart($connectionName, $plu),
                     'sales' => $connection->table('tbtr_jualdetail as sales')
                         ->select([
                             'sales.trjd_transactiondate as transaction_date',
@@ -671,6 +673,125 @@ class PluInfo extends Model
     }
 
     /** @return Collection<int, stdClass> */
+    private function monthlySalesChart(?string $connectionName, string $plu): Collection
+    {
+        $connection = DB::connection($connectionName);
+        $pluRange = $this->pluFamilyBounds($plu);
+        $transactionColumns = [
+            'trjd_transactiondate',
+            'trjd_transactionno',
+            'trjd_seqno',
+            'trjd_prdcd',
+            'trjd_cus_kodemember',
+            'trjd_nominalamt',
+            'trjd_transactiontype',
+            'trjd_flagtax2',
+            'trjd_create_by',
+            'trjd_quantity',
+            'trjd_baseprice',
+        ];
+        $sourceQuery = static function (string $table) use (
+            $connection,
+            $transactionColumns,
+            $pluRange,
+        ): Builder {
+            return $connection->table($table)
+                ->select($transactionColumns)
+                ->whereBetween('trjd_prdcd', $pluRange)
+                ->whereRaw("trjd_transactiondate >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months')")
+                ->whereRaw("trjd_transactiondate < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'");
+        };
+        $salesRows = $sourceQuery('tbtr_jualdetail')
+            ->union($sourceQuery('tmp.tbtr_jualdetail'));
+        $taxAdjustedAmount = "CASE
+            WHEN detail.trjd_flagtax2 = 'Y'
+                AND detail.trjd_create_by NOT IN ('IDM', 'RT1', 'ID1', 'ID2')
+                THEN detail.trjd_nominalamt / CASE
+                    WHEN detail.trjd_transactiondate::date >= DATE '2022-04-01'
+                        THEN 1 + 11 / 100.0
+                    ELSE 1 + 10 / 100.0
+                END
+            ELSE detail.trjd_nominalamt
+        END";
+        $costPerTransaction = "CASE
+            WHEN transaction_product.prd_unit = 'KG'
+                THEN detail.trjd_quantity * detail.trjd_baseprice / 1000
+            ELSE detail.trjd_quantity * detail.trjd_baseprice
+        END";
+        $quantityPerTransaction = "CASE
+            WHEN transaction_product.prd_unit = 'KG'
+                THEN detail.trjd_quantity / 1000
+            ELSE detail.trjd_quantity * transaction_product.prd_frac
+        END";
+        $monthlyTotals = $connection->query()
+            ->fromSub($salesRows, 'detail')
+            ->leftJoin(
+                'tbmaster_prodmast as transaction_product',
+                'detail.trjd_prdcd',
+                '=',
+                'transaction_product.prd_prdcd',
+            )
+            ->selectRaw("DATE_TRUNC('month', detail.trjd_transactiondate) AS month_start")
+            ->selectRaw("SUBSTRING(detail.trjd_prdcd, 1, 6) || '0' AS plu")
+            ->selectRaw("
+                SUM(ROUND(
+                    CASE
+                        WHEN detail.trjd_transactiontype = 'S' THEN detail.trjd_nominalamt
+                        ELSE detail.trjd_nominalamt * -1
+                    END,
+                    0
+                )) AS gross
+            ")
+            ->selectRaw("
+                SUM(ROUND(
+                    CASE
+                        WHEN detail.trjd_transactiontype = 'S' THEN ({$taxAdjustedAmount})
+                        WHEN detail.trjd_transactiontype = 'R' THEN ({$taxAdjustedAmount}) * -1
+                        ELSE 0
+                    END,
+                    2
+                )) AS sales
+            ")
+            ->selectRaw("
+                SUM(ROUND(
+                    CASE
+                        WHEN detail.trjd_transactiontype = 'S'
+                            THEN ({$taxAdjustedAmount}) - ({$costPerTransaction})
+                        WHEN detail.trjd_transactiontype = 'R'
+                            THEN (({$taxAdjustedAmount}) - ({$costPerTransaction})) * -1
+                        ELSE 0
+                    END,
+                    2
+                )) AS margin
+            ")
+            ->selectRaw("
+                SUM(ROUND(
+                    ({$quantityPerTransaction}) *
+                        CASE WHEN detail.trjd_transactiontype = 'S' THEN 1 ELSE -1 END,
+                    2
+                )) AS quantity
+            ")
+            ->selectRaw('COUNT(DISTINCT detail.trjd_cus_kodemember) AS members')
+            ->groupByRaw("DATE_TRUNC('month', detail.trjd_transactiondate)")
+            ->groupByRaw("SUBSTRING(detail.trjd_prdcd, 1, 6) || '0'");
+
+        return $connection->query()
+            ->fromSub($monthlyTotals, 'monthly_sales')
+            ->leftJoin('tbmaster_prodmast as product', 'monthly_sales.plu', '=', 'product.prd_prdcd')
+            ->selectRaw("TO_CHAR(monthly_sales.month_start, 'MON-YY') AS mon")
+            ->addSelect([
+                'monthly_sales.gross',
+                'monthly_sales.sales',
+                'monthly_sales.margin',
+                'monthly_sales.quantity',
+            ])
+            ->selectRaw('ROUND(monthly_sales.quantity / NULLIF(product.prd_frac, 0), 1) AS cartons')
+            ->addSelect('monthly_sales.members')
+            ->orderBy('monthly_sales.month_start')
+            ->get();
+    }
+
+    /** @return Collection<int, stdClass> */
     private function priceMargin(?string $connectionName, string $plu): Collection
     {
         $pluRange = $this->pluFamilyBounds($plu);
@@ -678,13 +799,15 @@ class PluInfo extends Model
             WITH products AS (
                 SELECT
                     product.prd_prdcd AS plu,
-                    product.prd_deskripsipanjang AS description,
                     product.prd_unit AS unit,
                     product.prd_frac AS fraction,
                     product.prd_minjual AS minimum_sale,
                     product.prd_avgcost AS average_cost,
                     product.prd_lastcost AS last_cost,
                     product.prd_hrgjual AS regular_price,
+                    product.prd_flagbkp1 AS tax_flag_1,
+                    product.prd_flagbkp2 AS tax_flag_2,
+                    product.prd_ppn AS ppn,
                     CASE
                         WHEN product.prd_unit = 'KG' AND product.prd_minjual = 1
                             THEN product.prd_minjual * 1000
@@ -718,6 +841,11 @@ class PluInfo extends Model
                     promotion.promo_price,
                     promotion.promo_starts_at,
                     promotion.promo_ends_at,
+                    CASE
+                        WHEN product.tax_flag_1 = 'Y' AND product.tax_flag_2 = 'Y'
+                            THEN COALESCE(product.ppn, 0)
+                        ELSE 0
+                    END AS ppn_percent,
                     COALESCE(NULLIF(promotion.promo_price, 0), product.regular_price) AS price_used,
                     CASE
                         WHEN product.unit LIKE '%RCG%' THEN product.normalized_minimum_sale
@@ -726,6 +854,12 @@ class PluInfo extends Model
                     END AS promotion_quantity
                 FROM products AS product
                 LEFT JOIN member_promotions AS promotion ON product.plu = promotion.plu
+            ),
+            net_priced_products AS (
+                SELECT
+                    product.*,
+                    product.price_used / (1 + product.ppn_percent / 100.0) AS net_price_per_unit
+                FROM priced_products AS product
             ),
             eligible_cashbacks AS (
                 SELECT DISTINCT
@@ -816,25 +950,25 @@ class PluInfo extends Model
             )
             SELECT
                 product.plu,
-                product.description,
                 product.unit,
                 product.fraction,
                 product.minimum_sale,
                 product.regular_price,
-                product.promo_price,
+                NULLIF(product.promo_price, 0) AS promo_price,
                 product.price_used AS price_per_unit,
                 product.minimum_sale * product.price_used AS minimum_sale_total,
                 COALESCE(cashback.cashback, 0) AS cashback_per_minimum_sale,
                 product.minimum_sale * product.price_used - COALESCE(cashback.cashback, 0) AS net_price,
                 product.average_cost,
                 product.last_cost,
+                product.net_price_per_unit - product.average_cost AS margin_per_unit,
                 (
-                    (product.minimum_sale * product.price_used - COALESCE(cashback.cashback, 0))::numeric
-                    / NULLIF(product.minimum_sale, 0)::numeric
-                ) - product.average_cost AS margin_per_unit,
+                    (product.net_price_per_unit - product.average_cost)::numeric
+                    / NULLIF(product.net_price_per_unit, 0)::numeric
+                ) * 100 AS margin_percent,
                 product.promo_starts_at,
                 product.promo_ends_at
-            FROM priced_products AS product
+            FROM net_priced_products AS product
             LEFT JOIN cashback_by_product AS cashback ON product.plu = cashback.plu
             ORDER BY product.plu
             SQL;
@@ -963,6 +1097,13 @@ class PluInfo extends Model
             ->selectRaw('SUM(COALESCE(sts_qty, 0)) AS quantity')
             ->where('sts_prdcd', $plu)
             ->groupBy('sts_prdcd');
+        $adjustmentStock = $connection->table('tbmaster_stock')
+            ->select('st_prdcd')
+            ->selectRaw("SUM(CASE WHEN st_lokasi = '02' THEN COALESCE(st_saldoakhir, 0) ELSE 0 END) AS return_stock")
+            ->selectRaw("SUM(CASE WHEN st_lokasi = '03' THEN COALESCE(st_saldoakhir, 0) ELSE 0 END) AS damaged_stock")
+            ->where('st_prdcd', $plu)
+            ->whereIn('st_lokasi', ['02', '03'])
+            ->groupBy('st_prdcd');
 
         return $connection->table($this->getTable().' as product')
             ->leftJoin('tbmaster_divisi as division', 'product.prd_kodedivisi', '=', 'division.div_kodedivisi')
@@ -975,6 +1116,7 @@ class PluInfo extends Model
             ->leftJoinSub($supplier, 'supplier', 'product.prd_prdcd', '=', 'supplier.hgb_prdcd')
             ->leftJoinSub($openOrders, 'open_orders', 'product.prd_prdcd', '=', 'open_orders.plu')
             ->leftJoinSub($iccStock, 'icc_stock', 'product.prd_prdcd', '=', 'icc_stock.sts_prdcd')
+            ->leftJoinSub($adjustmentStock, 'adjustment_stock', 'product.prd_prdcd', '=', 'adjustment_stock.st_prdcd')
             ->select([
                 'product.prd_prdcd as plu',
                 'product.prd_plumcg as plu_mcg',
@@ -1011,6 +1153,8 @@ class PluInfo extends Model
             ->selectRaw('COALESCE(open_orders.order_quantity, 0) AS open_order_quantity')
             ->selectRaw('COALESCE(open_orders.order_count, 0) AS open_order_count')
             ->selectRaw('COALESCE(icc_stock.quantity, 0) AS icc_quantity')
+            ->selectRaw('COALESCE(adjustment_stock.return_stock, 0) AS return_stock')
+            ->selectRaw('COALESCE(adjustment_stock.damaged_stock, 0) AS damaged_stock')
             ->selectRaw('COALESCE(stock.stock, 0) - COALESCE(open_orders.order_quantity, 0) - COALESCE(icc_stock.quantity, 0) AS real_stock')
             ->where('product.prd_prdcd', $plu)
             ->first();

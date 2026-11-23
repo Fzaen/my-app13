@@ -91,7 +91,7 @@ class PbDateReportExport extends TextColumnValueBinder implements FromQuery, Wit
             $row->obi_kdmember,
             $row->cus_namamember,
             $row->cus_alamatmember8,
-            $row->tglstruk ?? $row->kdpromo,
+            $row->tglstruk,
             $row->obi_tipebayar,
             $row->pin,
             $shippingCost,

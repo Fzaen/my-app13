@@ -19,6 +19,31 @@ html.dark {
     color-scheme: dark;
 }
 
+html:not(.dark) body {
+    background-color: #edf1ed;
+    color: #29312d;
+}
+
+html:not(.dark) .bg-white,
+html:not(.dark) [class~="bg-white/95"] {
+    background-color: #f7f8f6 !important;
+}
+
+html:not(.dark) .bg-gray-50,
+html:not(.dark) [class~="bg-gray-50/80"] {
+    background-color: #f2f4f1 !important;
+}
+
+html:not(.dark) .bg-gray-100 {
+    background-color: #edf1ed !important;
+}
+
+html:not(.dark) input,
+html:not(.dark) select,
+html:not(.dark) textarea {
+    background-color: #f6f7f5;
+}
+
 html.dark body {
     background-color: #111827;
     color: #e5e7eb;

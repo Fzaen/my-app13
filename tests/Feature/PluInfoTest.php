@@ -14,12 +14,14 @@ use Tests\TestCase;
 
 class PluInfoTest extends TestCase
 {
+    private const DATABASE_CONNECTION = 'spi1m_banjarbaru_sim';
+
     public function test_panel_data_returns_a_collection_when_cache_disallows_serialized_classes(): void
     {
         $defaultCacheStore = config('cache.default');
         $cacheStore = 'plu-info-serialized-test';
         $cacheKey = 'plu-info:panel:v3:'.hash('sha256', implode('|', [
-            'sqlite',
+            self::DATABASE_CONNECTION,
             'barcodes',
             '1234560',
             now()->toDateString(),
@@ -34,7 +36,7 @@ class PluInfoTest extends TestCase
         ]);
         Cache::forgetDriver($cacheStore);
 
-        Schema::connection('sqlite')->create('tbmaster_barcode', function ($table): void {
+        Schema::connection(self::DATABASE_CONNECTION)->create('tbmaster_barcode', function ($table): void {
             $table->string('brc_prdcd');
             $table->string('brc_barcode');
             $table->string('brc_status')->nullable();
@@ -44,15 +46,15 @@ class PluInfoTest extends TestCase
             $table->string('brc_modify_by')->nullable();
             $table->timestamp('brc_modify_dt')->nullable();
         });
-        DB::connection('sqlite')->table('tbmaster_barcode')->insert([
+        DB::connection(self::DATABASE_CONNECTION)->table('tbmaster_barcode')->insert([
             'brc_prdcd' => '1234560',
             'brc_barcode' => '8991234567890',
             'brc_status' => 'A',
         ]);
 
         try {
-            $rows = (new PluInfo)->panelData('barcodes', '1234560', 'sqlite');
-            $cachedRows = (new PluInfo)->panelData('barcodes', '1234560', 'sqlite');
+            $rows = (new PluInfo)->panelData('barcodes', '1234560', self::DATABASE_CONNECTION);
+            $cachedRows = (new PluInfo)->panelData('barcodes', '1234560', self::DATABASE_CONNECTION);
 
             $this->assertInstanceOf(Collection::class, $rows);
             $this->assertSame('8991234567890', $rows->first()->barcode);
@@ -60,10 +62,88 @@ class PluInfoTest extends TestCase
             $this->assertSame('8991234567890', $cachedRows->first()->barcode);
             $this->assertIsArray(Cache::get($cacheKey));
         } finally {
-            Schema::connection('sqlite')->dropIfExists('tbmaster_barcode');
+            Schema::connection(self::DATABASE_CONNECTION)->dropIfExists('tbmaster_barcode');
             Cache::forgetDriver($cacheStore);
             Cache::setDefaultDriver($defaultCacheStore);
         }
+    }
+
+    public function test_price_margin_query_removes_product_vat_and_excludes_cashback_from_margin(): void
+    {
+        $cacheKey = 'plu-info:panel:v3:'.hash('sha256', implode('|', [
+            self::DATABASE_CONNECTION,
+            'price-margin',
+            '1234560',
+            now()->toDateString(),
+        ]));
+        Cache::forget($cacheKey);
+
+        try {
+            $queries = DB::connection(self::DATABASE_CONNECTION)->pretend(function (): void {
+                (new PluInfo)->panelData('price-margin', '1234560', self::DATABASE_CONNECTION);
+            });
+        } finally {
+            Cache::forget($cacheKey);
+        }
+
+        $this->assertCount(1, $queries);
+        $this->assertStringContainsString(
+            'product.prd_flagbkp1 AS tax_flag_1',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            'product.prd_flagbkp2 AS tax_flag_2',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            'product.prd_ppn AS ppn',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            "WHEN product.tax_flag_1 = 'Y' AND product.tax_flag_2 = 'Y'",
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            'product.price_used / (1 + product.ppn_percent / 100.0) AS net_price_per_unit',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            'product.minimum_sale * product.price_used - COALESCE(cashback.cashback, 0) AS net_price',
+            $queries[0]['query'],
+        );
+        $this->assertStringNotContainsString(
+            'COALESCE(cashback.cashback, 0) AS margin_per_unit',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            'product.net_price_per_unit - product.average_cost AS margin_per_unit',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            '(product.net_price_per_unit - product.average_cost)::numeric',
+            $queries[0]['query'],
+        );
+        $this->assertStringContainsString(
+            '/ NULLIF(product.net_price_per_unit, 0)::numeric',
+            $queries[0]['query'],
+        );
+    }
+
+    public function test_product_query_includes_alternate_image_code_and_return_damage_stock(): void
+    {
+        $queries = DB::connection(self::DATABASE_CONNECTION)->pretend(function (): void {
+            $productQuery = new \ReflectionMethod(PluInfo::class, 'product');
+            $productQuery->invoke(new PluInfo, '1234560', self::DATABASE_CONNECTION);
+        });
+
+        $this->assertCount(1, $queries);
+        $sql = strtolower($queries[0]['query']);
+        $this->assertStringContainsString('prd_plumcg', $sql);
+        $this->assertStringContainsString('plu_mcg', $sql);
+        $this->assertStringContainsString("sum(case when st_lokasi = '02'", $sql);
+        $this->assertStringContainsString("sum(case when st_lokasi = '03'", $sql);
+        $this->assertStringContainsString('adjustment_stock.return_stock', $sql);
+        $this->assertStringContainsString('adjustment_stock.damaged_stock', $sql);
     }
 
     public function test_guest_is_redirected_to_login_from_plu_info(): void
@@ -241,9 +321,15 @@ class PluInfoTest extends TestCase
                 ->andReturn(collect([
                     (object) [
                         'plu' => '1234560',
+                        'fraction' => 32,
                         'minimum_sale_total' => 1000,
+                        'average_cost' => 800,
+                        'regular_price' => 1000,
+                        'promo_price' => null,
                         'cashback_per_minimum_sale' => 100,
                         'net_price' => 900,
+                        'margin_per_unit' => 200,
+                        'margin_percent' => 20,
                     ],
                 ]));
         });
@@ -252,9 +338,85 @@ class PluInfoTest extends TestCase
             ->getJson(route('plu.info.panel', ['plu' => '1234560', 'panel' => 'price-margin']))
             ->assertOk()
             ->assertJsonPath('label', 'Harga net dan margin')
+            ->assertJsonPath('rows.0.fraction', 32)
             ->assertJsonPath('rows.0.minimum_sale_total', 1000)
+            ->assertJsonPath('rows.0.average_cost', 800)
+            ->assertJsonPath('rows.0.regular_price', 1000)
             ->assertJsonPath('rows.0.cashback_per_minimum_sale', 100)
-            ->assertJsonPath('rows.0.net_price', 900);
+            ->assertJsonPath('rows.0.net_price', 900)
+            ->assertJsonPath('rows.0.margin_per_unit', 200)
+            ->assertJsonPath('rows.0.margin_percent', 20);
+    }
+
+    public function test_authenticated_user_can_load_the_monthly_sales_chart_panel(): void
+    {
+        $panelRows = collect([
+            (object) [
+                'mon' => 'NOV-26',
+                'gross' => 100000,
+                'sales' => 90000,
+                'margin' => 20000,
+                'quantity' => 40,
+                'cartons' => 1,
+                'members' => 12,
+            ],
+        ]);
+
+        $this->mock(PluInfo::class, function (MockInterface $mock) use ($panelRows): void {
+            $mock->shouldReceive('hasProduct')
+                ->once()
+                ->with('1234560')
+                ->andReturn(true);
+            $mock->shouldReceive('panelData')
+                ->once()
+                ->with('sales-chart', '1234560')
+                ->andReturn($panelRows);
+        });
+
+        $this->actingAs($this->user())
+            ->getJson(route('plu.info.panel', [
+                'plu' => '1234560',
+                'panel' => 'sales-chart',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('label', 'SALES')
+            ->assertJsonPath('rows.0.mon', 'NOV-26')
+            ->assertJsonPath('rows.0.sales', 90000)
+            ->assertJsonPath('rows.0.cartons', 1);
+    }
+
+    public function test_monthly_sales_chart_query_aggregates_filtered_sales_and_temp_sales_rows(): void
+    {
+        $cacheKey = 'plu-info:panel:v3:'.hash('sha256', implode('|', [
+            self::DATABASE_CONNECTION,
+            'sales-chart',
+            '1234560',
+            now()->toDateString(),
+        ]));
+        Cache::forget($cacheKey);
+
+        try {
+            $queries = DB::connection(self::DATABASE_CONNECTION)->pretend(function (): void {
+                (new PluInfo)->panelData('sales-chart', '1234560', self::DATABASE_CONNECTION);
+            });
+        } finally {
+            Cache::forget($cacheKey);
+        }
+
+        $this->assertCount(1, $queries);
+        $sql = strtolower($queries[0]['query']);
+        $this->assertStringContainsString('"tbtr_jualdetail"', $sql);
+        $this->assertStringContainsString('"tmp"."tbtr_jualdetail"', $sql);
+        $this->assertStringContainsString('union', $sql);
+        $this->assertStringContainsString('count(distinct', $sql);
+        $this->assertStringContainsString("date_trunc('month', current_date - interval '11 months')", $sql);
+        $this->assertStringContainsString("date_trunc('month', current_date) + interval '1 month'", $sql);
+        $this->assertSame(2, substr_count($sql, "between '1234560' and '1234569'"));
+        $this->assertStringNotContainsString('select *', $sql);
+        $this->assertSame(
+            ['1234560', '1234569', '1234560', '1234569'],
+            $queries[0]['bindings'],
+        );
     }
 
     public function test_authenticated_user_can_get_product_description_suggestions(): void

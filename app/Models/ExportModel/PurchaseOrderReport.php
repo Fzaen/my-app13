@@ -23,8 +23,11 @@ class PurchaseOrderReport extends Model
             'obi_tgltrans', 'obi_notrans', 'trjd_prdcd', 'prd_deskripsipanjang',
         ],
         'pb-proses-item' => [
-            'ket', 'pb', 'obi_kdmember', 'cus_namamember', 'tglstruk',
-            'obi_tgltrans', 'obi_notrans', 'trjd_prdcd', 'prd_deskripsipanjang',
+            'pb', 'obi_tgltrans', 'obi_notrans', 'trjd_prdcd',
+            'prd_deskripsipanjang', 'obi_qtyorder', 'obi_qtyrealisasi', 'pobi_qty',
+            'selisih', 'obi_picker', 'pobi_create_by', 'hrgsatuan',
+            'pobi_nocontainer', 'jam_pick', 'jam_scan', 'ket', 'ket_item',
+            'obi_qty_hitungulang', 'obi_qtyba',
         ],
         'pb-kirim-list' => ['pb', 'tglpb', 'member', 'nama', 'notrans', 'ekspedisi', 'status'],
         'pb-belum-pin' => ['pb', 'tglpb', 'member', 'nama', 'notrans', 'ekspedisi', 'status'],
@@ -49,6 +52,7 @@ class PurchaseOrderReport extends Model
         ],
         'pb-proses-item' => [
             ['column' => 'pb', 'direction' => 'asc'],
+            ['column' => 'obi_tgltrans', 'direction' => 'asc'],
             ['column' => 'obi_notrans', 'direction' => 'asc'],
             ['column' => 'trjd_prdcd', 'direction' => 'asc'],
         ],
@@ -115,8 +119,9 @@ class PurchaseOrderReport extends Model
             throw new InvalidArgumentException("Unsupported PB table report [{$report}].");
         }
 
+        $reportQuery = self::forExport($report, $filters, $connectionName)->reorder();
         $query = DB::connection($connectionName)->query()
-            ->fromSub(self::forExport($report, $filters, $connectionName), 'pb_report_rows')
+            ->fromSub($reportQuery, 'pb_report_rows')
             ->select('pb_report_rows.*');
         $search = trim($search);
 
@@ -189,10 +194,6 @@ class PurchaseOrderReport extends Model
                 $join->whereRaw('detail.obi_tgltrans::date = order_header.obi_tgltrans::date')
                     ->on('detail.obi_notrans', '=', 'order_header.obi_notrans');
             })
-            ->leftJoin('tbmaster_customer as customer', function (JoinClause $join): void {
-                $join->on('order_header.obi_kdmember', '=', 'customer.cus_kodemember')
-                    ->where('customer.cus_kodeigr', '1M');
-            })
             ->leftJoin('tbmaster_prodmast as product', 'detail.obi_prdcd', '=', 'product.prd_prdcd')
             ->leftJoin('tbtr_packing_obi as packing', function (JoinClause $join): void {
                 $join->whereRaw('detail.obi_tgltrans::date = packing.pobi_tgltransaksi::date')
@@ -200,19 +201,62 @@ class PurchaseOrderReport extends Model
                     ->on('detail.obi_prdcd', '=', 'packing.pobi_prdcd');
             });
 
+        if (! $processOnly) {
+            $query->leftJoin('tbmaster_customer as customer', function (JoinClause $join): void {
+                $join->on('order_header.obi_kdmember', '=', 'customer.cus_kodemember')
+                    ->where('customer.cus_kodeigr', '1M');
+            });
+        }
+
         self::applyDateRange($query, 'order_header.obi_tglpb', $filters);
-        self::applyDateRange($query, 'detail.obi_tgltrans', $filters);
+        self::applyDateRange($query, 'detail.obi_tgltrans', [
+            'tglstart' => $filters['detail_tglstart'] ?? $filters['tglstart'],
+            'tglend' => $filters['detail_tglend'] ?? $filters['tglend'],
+        ]);
 
         self::applyPluFilter($query, $filters, 'detail.obi_prdcd');
 
+        if (isset($filters['nopb']) && $filters['nopb'] !== '') {
+            $query->whereRaw(
+                "RTRIM(SUBSTRING(order_header.obi_nopb, 1, 7), '/') = ?",
+                [$filters['nopb']],
+            );
+        }
+
         if ($processOnly) {
-            $query->whereIn('order_header.obi_recid', ['1', '2', '3', '5']);
+            self::applyStatusFilter($query, $filters['recid'] ?? 'batas', 'order_header.obi_recid');
+            self::applyProcessItemStatusFilter($query, $filters['ket_item'] ?? '');
+
+            return $query
+                ->selectRaw("RTRIM(SUBSTRING(order_header.obi_nopb, 1, 7), '/') AS pb")
+                ->selectRaw("TO_CHAR(detail.obi_tgltrans, 'DD-MON-YY') AS obi_tgltrans")
+                ->selectRaw('detail.obi_notrans AS obi_notrans')
+                ->selectRaw('detail.obi_prdcd AS trjd_prdcd')
+                ->selectRaw('product.prd_deskripsipanjang AS prd_deskripsipanjang')
+                ->selectRaw('detail.obi_qtyorder AS obi_qtyorder')
+                ->selectRaw('detail.obi_qtyrealisasi AS obi_qtyrealisasi')
+                ->selectRaw('packing.pobi_qty AS pobi_qty')
+                ->selectRaw('(detail.obi_qtyorder - packing.pobi_qty) AS selisih')
+                ->selectRaw('detail.obi_picker AS obi_picker')
+                ->selectRaw('packing.pobi_create_by AS pobi_create_by')
+                ->selectRaw('(detail.obi_hargasatuan + detail.obi_ppn) AS hrgsatuan')
+                ->selectRaw('packing.pobi_nocontainer AS pobi_nocontainer')
+                ->selectRaw('detail.obi_pick_dt AS jam_pick')
+                ->selectRaw('detail.obi_scan_dt AS jam_scan')
+                ->selectRaw(self::statusExpression('order_header.obi_recid').' AS ket')
+                ->selectRaw(self::processItemStatusExpression('detail.obi_recid').' AS ket_item')
+                ->selectRaw('detail.obi_qty_hitungulang AS obi_qty_hitungulang')
+                ->selectRaw('detail.obi_qtyba AS obi_qtyba')
+                ->orderBy('pb')
+                ->orderBy('detail.obi_tgltrans')
+                ->orderBy('detail.obi_notrans')
+                ->orderBy('detail.obi_prdcd');
         }
 
         return $query
             ->selectRaw('order_header.obi_recid AS obi_recid')
             ->selectRaw(self::statusExpression('order_header.obi_recid').' AS ket')
-            ->selectRaw("CASE WHEN order_header.obi_recid IS NULL THEN 'PICKING' WHEN order_header.obi_recid = '2' THEN 'BATAL' END AS ket_item")
+            ->selectRaw(self::statusExpression('detail.obi_recid').' AS ket_item')
             ->selectRaw("RTRIM(SUBSTRING(order_header.obi_nopb, 1, 7), '/') AS pb")
             ->selectRaw('order_header.obi_kdmember AS obi_kdmember')
             ->selectRaw('customer.cus_namamember AS cus_namamember')
@@ -238,6 +282,36 @@ class PurchaseOrderReport extends Model
             ->orderBy('pb')
             ->orderBy('detail.obi_tgltrans')
             ->orderBy('detail.obi_notrans');
+    }
+
+    /**
+     * @param  array<string, string>  $filters
+     */
+    public static function locationPreview(array $filters, ?string $connectionName = null): Builder
+    {
+        $connection = DB::connection($connectionName);
+        $locations = $connection->table('tbmaster_lokasi as location')
+            ->selectRaw('location.lks_prdcd AS plu')
+            ->selectRaw(
+                "location.lks_koderak || '.' || location.lks_kodesubrak || '.' || location.lks_tiperak || '.' || location.lks_shelvingrak || '.' || location.lks_nourut AS lokasi",
+            )
+            ->where('location.lks_tiperak', 'B')
+            ->where('location.lks_koderak', 'like', 'D%')
+            ->whereNotNull('location.lks_prdcd');
+
+        return $connection->query()
+            ->fromSub(self::detailsByItem($filters, false, $connectionName), 'pb_item')
+            ->leftJoinSub($locations, 'location', function (JoinClause $join): void {
+                $join->whereRaw(
+                    "location.plu = SUBSTRING(pb_item.trjd_prdcd, 1, 6) || '0'",
+                );
+            })
+            ->select('pb_item.*')
+            ->selectRaw('location.lokasi AS lokasi')
+            ->orderBy('pb_item.pb')
+            ->orderBy('pb_item.obi_tgltrans')
+            ->orderBy('pb_item.obi_notrans')
+            ->orderBy('pb_item.trjd_prdcd');
     }
 
     /**
@@ -284,9 +358,26 @@ class PurchaseOrderReport extends Model
             ->leftJoin('tbmaster_customer as customer', function (JoinClause $join): void {
                 $join->on('order_header.obi_kdmember', '=', 'customer.cus_kodemember')
                     ->where('customer.cus_kodeigr', '1M');
-            })
-            ->where('order_header.obi_recid', '5')
-            ->where('order_header.obi_kdekspedisi', 'like', '%Indopaket%');
+            });
+
+        if ($missingPinOnly) {
+            $query->where('order_header.obi_recid', '5')
+                ->where('order_header.obi_kdekspedisi', 'like', '%Indopaket%');
+        } else {
+            $query->where(function (Builder $shippingQuery): void {
+                $shippingQuery
+                    ->where(function (Builder $indopaketQuery): void {
+                        $indopaketQuery
+                            ->where('order_header.obi_recid', '5')
+                            ->where('order_header.obi_kdekspedisi', 'like', '%Indopaket%');
+                    })
+                    ->orWhere(function (Builder $pickupQuery): void {
+                        $pickupQuery
+                            ->where('order_header.obi_recid', '1')
+                            ->where('order_header.obi_kdekspedisi', 'like', '%Ambil%');
+                    });
+            });
+        }
 
         self::applyDateRange($query, 'order_header.obi_tglpb', $filters);
 
@@ -628,6 +719,39 @@ class PurchaseOrderReport extends Model
             ->where($column, '<', $endDateExclusive);
     }
 
+    private static function applyStatusFilter(Builder $query, string $status, string $column): void
+    {
+        match ($status) {
+            'notnull' => $query->whereNotNull($column),
+            'null' => $query->whereNull($column),
+            'B' => $query->where($column, 'like', 'B%'),
+            'proses' => $query->where(function (Builder $statusQuery) use ($column): void {
+                $statusQuery->whereIn($column, ['1', '2', '3', '4', '5'])
+                    ->orWhereNull($column);
+            }),
+            'batas' => $query->where(function (Builder $statusQuery) use ($column): void {
+                $statusQuery->whereIn($column, ['1', '2', '3'])
+                    ->orWhereNull($column);
+            }),
+            '1', '2', '3', '5', '6' => $query->where($column, $status),
+            default => null,
+        };
+    }
+
+    private static function applyProcessItemStatusFilter(Builder $query, string $status): void
+    {
+        if ($status === '') {
+            return;
+        }
+
+        match ($status) {
+            'PICKING' => $query->whereNull('detail.obi_recid'),
+            'PICKING SCAN 0' => $query->where('detail.obi_recid', '1'),
+            'BATAL' => $query->where('detail.obi_recid', '2'),
+            default => throw new InvalidArgumentException("Unsupported PB item status [{$status}]."),
+        };
+    }
+
     private static function statusExpression(string $recid): string
     {
         return "CASE
@@ -638,6 +762,15 @@ class PurchaseOrderReport extends Model
             WHEN {$recid} = '3' THEN 'SIAP_DSP'
             WHEN {$recid} = '5' THEN 'DSP'
             WHEN {$recid} = '6' THEN 'STRUK'
+        END";
+    }
+
+    private static function processItemStatusExpression(string $recid): string
+    {
+        return "CASE
+            WHEN {$recid} IS NULL THEN 'PICKING'
+            WHEN {$recid} = '1' THEN 'PICKING SCAN 0'
+            WHEN {$recid} = '2' THEN 'BATAL'
         END";
     }
 
