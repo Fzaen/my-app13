@@ -344,12 +344,6 @@ const pinOptions = [
     { value: "ambil", label: "Ambil di SPI" },
 ];
 
-const handlePinFilterChange = () => {
-    if (["indopaket", "ambil"].includes(selectedPin.value)) {
-        selectedKet.value = "all";
-    }
-};
-
 const extraKetLabels = {
     notnull: "SDH_SEND",
     batas: "PROSES AWAL (1-3 + BLM_SEND)",
@@ -1520,7 +1514,6 @@ const dateTimeParts = (value) => {
                         <span>PIN</span>
                         <select
                             v-model="selectedPin"
-                            @change="handlePinFilterChange"
                             class="block w-full rounded-lg border-gray-300 text-sm shadow-sm transition hover:border-indigo-400 focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                         >
                             <option
@@ -2059,7 +2052,11 @@ const dateTimeParts = (value) => {
                 >
                     {{ requestError }}
                 </p>
-                <form v-else class="space-y-4" @submit.prevent="submitRequest">
+                <form
+                    v-else
+                    class="pb-neon-panel pb-neon-panel--request space-y-4"
+                    @submit.prevent="submitRequest"
+                >
                     <label class="block space-y-1 text-sm font-medium text-gray-700 dark:text-gray-200">
                         <span>Tanggal kirim</span>
                         <input
@@ -2182,7 +2179,11 @@ const dateTimeParts = (value) => {
                         Coba lagi
                     </button>
                 </div>
-                <form v-else class="space-y-4" @submit.prevent="submitGift">
+                <form
+                    v-else
+                    class="pb-neon-panel pb-neon-panel--gift space-y-4"
+                    @submit.prevent="submitGift"
+                >
                     <dl class="grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm dark:bg-gray-800 sm:grid-cols-2">
                         <div>
                             <dt class="text-gray-500 dark:text-gray-400">No. PB</dt>
@@ -2569,7 +2570,7 @@ const dateTimeParts = (value) => {
                 </p>
                 <div
                     v-else-if="loyaltyEditingRecord"
-                    class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+                    class="pb-neon-panel pb-neon-panel--loyalty space-y-4"
                 >
                     <div class="space-y-1 text-sm text-gray-700 dark:text-gray-200">
                         <p>

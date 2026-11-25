@@ -42,7 +42,7 @@ class PurchaseOrderReportController extends Controller
         'pb-proses-item' => ['recid' => 'batas'],
         'pb-kirim-list' => ['recid' => 'all', 'ekspedisi' => 'kirim'],
         'pb-belum-pin' => ['recid' => 'proses', 'pin' => 'belumpin'],
-        'pb-ambil-spi' => ['recid' => 'proses', 'ekspedisi' => 'Ambil'],
+        'pb-ambil-spi' => ['recid' => 'proses', 'pin' => 'ambil'],
         'pb-request-kirim' => ['request' => '1'],
     ];
 
@@ -199,7 +199,9 @@ class PurchaseOrderReportController extends Controller
             ...($report === 'pb-proses-item'
                 ? ['ket_item' => ['nullable', Rule::in(['PICKING', 'BATAL', 'PICKING SCAN 0'])]]
                 : []),
-            'ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket', 'kirim'])],
+            ...($report !== 'pb-proses'
+                ? ['ekspedisi' => ['nullable', Rule::in(['Ambil', 'Indopaket', 'kirim'])]]
+                : []),
             'pin' => ['nullable', Rule::in([
                 'all',
                 'belumpin',

@@ -113,7 +113,11 @@ function submitForm() {
                     </p>
                 </div>
 
-                <form class="space-y-5" @submit.prevent="submitForm">
+                <form
+                    class="pb-neon-panel space-y-5"
+                    :class="`pb-neon-panel--${action}`"
+                    @submit.prevent="submitForm"
+                >
                     <input type="hidden" name="mode" v-model="form.mode" />
                     <input type="hidden" name="tglpb" v-model="form.tglpb" />
                     <input type="hidden" name="nopb" v-model="form.nopb" />

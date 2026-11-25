@@ -141,3 +141,89 @@ html.dark [class~="border-[#d4dbd2]"],
 html.dark [class~="border-[#e4e8e1]"] {
     border-color: #374151 !important;
 }
+
+.pb-neon-panel {
+    --pb-neon: #0284c7;
+    --pb-neon-soft: rgb(2 132 199 / 12%);
+    border: 1.5px solid var(--pb-neon);
+    border-radius: 12px;
+    padding: 1rem;
+    background: linear-gradient(145deg, #fff 0%, var(--pb-neon-soft) 100%);
+    box-shadow:
+        0 0 10px var(--pb-neon-soft),
+        inset 0 0 8px var(--pb-neon-soft);
+    transition:
+        box-shadow 0.3s ease,
+        border-color 0.3s ease;
+}
+
+.pb-neon-panel:hover {
+    box-shadow:
+        0 0 15px var(--pb-neon-soft),
+        0 0 28px var(--pb-neon-soft);
+}
+
+.pb-neon-panel--gift {
+    --pb-neon: #0284c7;
+    --pb-neon-soft: rgb(2 132 199 / 13%);
+}
+
+.pb-neon-panel--request {
+    --pb-neon: #059669;
+    --pb-neon-soft: rgb(5 150 105 / 13%);
+}
+
+.pb-neon-panel--loyalty {
+    --pb-neon: #7c3aed;
+    --pb-neon-soft: rgb(124 58 237 / 13%);
+}
+
+.pb-neon-panel input:not([type="hidden"]),
+.pb-neon-panel select,
+.pb-neon-panel textarea {
+    border: 1.5px solid var(--pb-neon);
+    border-radius: 0.65rem;
+    background-color: #fff;
+    color: #0f172a;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.pb-neon-panel input:not([type="hidden"]):hover,
+.pb-neon-panel select:hover,
+.pb-neon-panel textarea:hover {
+    box-shadow: 0 0 10px var(--pb-neon-soft);
+}
+
+.pb-neon-panel input:not([type="hidden"]):focus,
+.pb-neon-panel select:focus,
+.pb-neon-panel textarea:focus {
+    border-color: var(--pb-neon);
+    outline: none;
+    box-shadow:
+        0 0 0 3px var(--pb-neon-soft),
+        0 0 14px var(--pb-neon-soft);
+}
+
+html.dark .pb-neon-panel {
+    background: linear-gradient(145deg, #0f172a 0%, #111827 100%);
+    box-shadow:
+        0 0 10px color-mix(in srgb, var(--pb-neon) 40%, transparent),
+        0 0 25px color-mix(in srgb, var(--pb-neon) 20%, transparent),
+        inset 0 0 8px color-mix(in srgb, var(--pb-neon) 20%, transparent);
+}
+
+html.dark .pb-neon-panel:hover {
+    box-shadow:
+        0 0 15px color-mix(in srgb, var(--pb-neon) 70%, transparent),
+        0 0 35px color-mix(in srgb, var(--pb-neon) 40%, transparent);
+}
+
+html.dark .pb-neon-panel input:not([type="hidden"]),
+html.dark .pb-neon-panel select,
+html.dark .pb-neon-panel textarea {
+    border-color: var(--pb-neon);
+    background-color: #111827;
+    color: #f8fafc;
+}

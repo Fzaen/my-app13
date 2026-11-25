@@ -106,7 +106,7 @@ const navigationMenus = [
                         label: "Ambil di SPI",
                         href: reportHref("pb-proses", {
                             recid: "proses",
-                            ekspedisi: "Ambil",
+                            pin: "ambil",
                         }),
                     },
                     {
@@ -116,6 +116,13 @@ const navigationMenus = [
                             request: "1",
                         }),
                     },
+                ],
+            },
+            {
+                label: "SL",
+                children: [
+                    { label: "SLPICKER", route: "sl.picker" },
+                    { label: "SLPICKING", route: "sl.picking" },
                 ],
             },
         ],

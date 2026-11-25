@@ -266,6 +266,7 @@ final class PbDateReport
                 req.req_tgl_kirim || ' ' || req.req_request AS req,
                 h_loy.LOYALTY,
                 gt.gttipe,
+                ind.ads_kode,
                 ind.ads_prdcd,
                 ind.ads_qty,
                 ind.ads_hadiah,

@@ -226,7 +226,7 @@ class PurchaseOrderReportControllerTest extends TestCase
         Excel::assertDownloaded('pb-proses_2026-11-01_2026-11-14.xlsx');
     }
 
-    public function test_pb_excel_export_keeps_search_as_a_bound_filter(): void
+    public function test_pb_excel_export_uses_pin_filter_and_ignores_legacy_expedition_filter(): void
     {
         Excel::fake();
 
@@ -239,7 +239,8 @@ class PurchaseOrderReportControllerTest extends TestCase
                 'report' => 'pb-proses',
                 'tglstart' => '2026-09-01',
                 'tglend' => '2026-09-02',
-                'recid' => '3',
+                'recid' => 'proses',
+                'pin' => 'ambil',
                 'ekspedisi' => 'Indopaket',
                 'search' => $search,
             ]))
@@ -254,8 +255,9 @@ class PurchaseOrderReportControllerTest extends TestCase
                     && str_contains(strtolower($query->toSql()), 'ilike ?')
                     && ! str_contains($query->toSql(), $search)
                     && in_array('%'.$search.'%', $query->getBindings(), true)
-                    && in_array('Indopaket%', $query->getBindings(), true)
-                    && in_array('3', $query->getBindings(), true);
+                    && in_array('%Ambil%', $query->getBindings(), true)
+                    && ! in_array('Indopaket%', $query->getBindings(), true)
+                    && array_diff(['1', '2', '3', '4', '5'], $query->getBindings()) === [];
             },
         );
     }
@@ -402,6 +404,7 @@ class PurchaseOrderReportControllerTest extends TestCase
             "WHEN st.sti_pin IS NOT NULL AND st.sti_receivername != '' THEN 'SUDAH INPUT pin'",
             $sql,
         );
+        $this->assertStringContainsString('ind.ads_kode', $sql);
         $this->assertStringContainsString('COUNT(*) AS LOYALTY', $sql);
         $this->assertStringContainsString('ly_tgl_kirim IS NULL', $sql);
         $this->assertStringContainsString(

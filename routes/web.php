@@ -8,6 +8,7 @@ use App\Http\Controllers\PluInfoController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseOrderReportController;
 use App\Http\Controllers\SalesExportController;
+use App\Http\Controllers\SlReportController;
 use App\Http\Middleware\EnsurePbWriteIp;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -21,6 +22,10 @@ Route::get('/dashboard', function () {
 })->middleware('auth')->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/sl/picker', [SlReportController::class, 'picker'])->name('sl.picker');
+    Route::get('/sl/picker/details', [SlReportController::class, 'pickerDetails'])
+        ->name('sl.picker.details');
+    Route::get('/sl/picking', [SlReportController::class, 'picking'])->name('sl.picking');
     Route::get('/pb/all', [PbAllController::class, 'index'])->name('pb.all');
     Route::get('/pb/all/export', [PbAllController::class, 'export'])->name('pb.all.export');
     Route::get('/pb/reports/{report}', [PurchaseOrderReportController::class, 'index'])
