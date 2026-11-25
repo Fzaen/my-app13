@@ -128,8 +128,11 @@ const navigationMenus = [
         ],
     },
     {
-        label: "Cek",
-        items: [{ label: "Cek PLU", route: "plu.info" }],
+        label: "Info",
+        items: [
+            { label: "Detail PLU", route: "plu.info" },
+            { label: "Detail Promo", route: "info.promo" },
+        ],
     },
     {
         label: "Data",
@@ -138,6 +141,12 @@ const navigationMenus = [
                 label: "Export",
                 children: [{ label: "Semua laporan", route: "sales.export" }],
             },
+        ],
+    },
+    {
+        label: "Logistik",
+        items: [
+            { label: "Penerimaan", route: "logistics.receiving" },
         ],
     },
     ...(isEd1
@@ -158,35 +167,6 @@ const navigationMenus = [
               },
           ]
         : []),
-    {
-        label: "Workspace",
-        items: [
-            { label: "Dashboard", route: "dashboard" },
-            {
-                label: "Preferences",
-                children: [
-                    { label: "Profile settings", route: "profile.edit" },
-                ],
-            },
-        ],
-    },
-    {
-        label: "Account",
-        items: [
-            { label: "Profile", route: "profile.edit" },
-            {
-                label: "Session",
-                children: [
-                    {
-                        label: "Log out",
-                        route: "logout",
-                        method: "post",
-                        danger: true,
-                    },
-                ],
-            },
-        ],
-    },
 ];
 
 const handleDocumentPointerDown = (event) => {

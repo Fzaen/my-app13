@@ -1260,7 +1260,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <Head title="Cek PLU" />
+    <Head title="Info - Detail PLU" />
 
     <AuthenticatedLayout>
         <div

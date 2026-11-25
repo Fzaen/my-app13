@@ -1,11 +1,13 @@
 <?php
 
+use App\Http\Controllers\LogisticsReceivingController;
 use App\Http\Controllers\ManualBookController;
 use App\Http\Controllers\PbActionController;
 use App\Http\Controllers\PbAllController;
 use App\Http\Controllers\PbItemController;
 use App\Http\Controllers\PluInfoController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PromotionCheckController;
 use App\Http\Controllers\PurchaseOrderReportController;
 use App\Http\Controllers\SalesExportController;
 use App\Http\Controllers\SlReportController;
@@ -22,6 +24,20 @@ Route::get('/dashboard', function () {
 })->middleware('auth')->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/info/detail-promo', [PromotionCheckController::class, 'index'])
+        ->name('info.promo');
+    Route::get('/info/detail-promo/export', [PromotionCheckController::class, 'export'])
+        ->name('info.promo.export');
+    Route::get('/info/detail-promo/suggestions', [PromotionCheckController::class, 'suggestions'])
+        ->name('info.promo.suggestions');
+    Route::get('/cek/promo', function () {
+        return redirect()->route('info.promo', request()->query());
+    });
+    Route::get('/logistics/penerimaan', [LogisticsReceivingController::class, 'index'])
+        ->name('logistics.receiving');
+    Route::get('/logistics/penerimaan/suppliers/{supplier}/returns', [LogisticsReceivingController::class, 'supplierReturns'])
+        ->where('supplier', '[A-Za-z0-9_-]{1,10}')
+        ->name('logistics.receiving.supplier-returns');
     Route::get('/sl/picker', [SlReportController::class, 'picker'])->name('sl.picker');
     Route::get('/sl/picker/details', [SlReportController::class, 'pickerDetails'])
         ->name('sl.picker.details');
@@ -61,10 +77,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/pb/actions/request', [PbActionController::class, 'saveRequest'])
         ->middleware(EnsurePbWriteIp::class)
         ->name('pb.actions.request.save');
-    Route::get('/data/plu', [PluInfoController::class, 'index'])->name('plu.info');
-    Route::get('/data/plu/suggestions', [PluInfoController::class, 'suggestions'])->name('plu.info.suggestions');
-    Route::get('/data/plu/summary', [PluInfoController::class, 'summary'])->name('plu.info.summary');
-    Route::get('/data/plu/panel', [PluInfoController::class, 'panel'])->name('plu.info.panel');
+    Route::get('/info/detail-plu', [PluInfoController::class, 'index'])->name('plu.info');
+    Route::get('/info/detail-plu/suggestions', [PluInfoController::class, 'suggestions'])->name('plu.info.suggestions');
+    Route::get('/info/detail-plu/summary', [PluInfoController::class, 'summary'])->name('plu.info.summary');
+    Route::get('/info/detail-plu/panel', [PluInfoController::class, 'panel'])->name('plu.info.panel');
+    Route::get('/data/plu', function () {
+        return redirect()->route('plu.info', request()->query());
+    });
+    Route::get('/data/plu/{endpoint}', function (string $endpoint) {
+        abort_unless(in_array($endpoint, ['suggestions', 'summary', 'panel'], true), 404);
+
+        return redirect()->to(route("plu.info.{$endpoint}", request()->query()));
+    });
     Route::get('/data/export/sales', [SalesExportController::class, 'index'])->name('sales.export');
     Route::post('/data/export/sales/download', [SalesExportController::class, 'export'])
         ->name('sales.export.download');
